@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "597999073953",
+    "firebase_url": "https://cityvoice-66668-default-rtdb.firebaseio.com",
+    "project_id": "cityvoice-66668",
+    "storage_bucket": "cityvoice-66668.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:597999073953:android:d8811d5591704ff4d90ee0",
+        "android_client_info": {
+          "package_name": "com.amit.cityvoice"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDKrJ8hUdnlL8mi_3YR5dFSNJTNv_48eL8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
