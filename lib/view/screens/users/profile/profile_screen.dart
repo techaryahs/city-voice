@@ -729,6 +729,20 @@ class _ProfileScreenState extends State<ProfileScreen>
                     height: 1.6,
                   ),
                 ),
+
+                const SizedBox(height: 10),
+
+                Center(
+                  child: Text(
+                    'Developed by AryahsWorld Infotech OPC Pvt Ltd',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppColors.textLight,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

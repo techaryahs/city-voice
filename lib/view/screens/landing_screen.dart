@@ -321,12 +321,29 @@ class LandingScreen extends StatelessWidget {
   }
 
   Widget _buildFooter() {
-    return Text(
-      'Built with care for the neighborhoods we live in.',
-      style: GoogleFonts.inter(
-        fontSize: 12,
-        color: AppColors.textLight,
-      ),
+    return Column(
+      children: [
+        Text(
+          'Built with care for the neighborhoods we live in.',
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            color: AppColors.textLight,
+          ),
+          textAlign: TextAlign.center,
+        ),
+
+        const SizedBox(height: 6),
+
+        Text(
+          'Developed by AryahsWorld Infotech OPC Pvt Ltd',
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            color: AppColors.textMedium,
+            fontWeight: FontWeight.w500,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 }
