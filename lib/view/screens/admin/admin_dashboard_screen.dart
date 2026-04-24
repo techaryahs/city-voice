@@ -1,3 +1,5 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -11,7 +13,18 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _selectedNav = 0;
-  bool _sidebarOpen = false;
+  
+  // ── Firebase ──────────────────────────────────────────────────────────
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final DatabaseReference _postsRef = FirebaseDatabase.instance.ref('posts');
+  final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
+
+  // ── Admin Stats ───────────────────────────────────────────────────────
+  int _totalUsers = 0;
+  int _totalPosts = 0;
+  int _resolvedPosts = 0; // Future: track status
+  List<Map<String, dynamic>> _recentPosts = [];
+  bool _isLoading = true;
 
   final List<_NavItem> _navItems = const [
     _NavItem(Icons.dashboard_rounded, 'Dashboard'),
@@ -21,6 +34,52 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _NavItem(Icons.shield_rounded, 'Content Moderation'),
     _NavItem(Icons.settings_rounded, 'Settings'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAdminData();
+  }
+
+  void _fetchAdminData() {
+    // 1. Listen to Users count
+    _usersRef.onValue.listen((event) {
+      if (mounted && event.snapshot.value != null) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        setState(() => _totalUsers = data.length);
+      }
+    });
+
+    // 2. Listen to Posts
+    _postsRef.onValue.listen((event) {
+      if (mounted && event.snapshot.value != null) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        final List<Map<String, dynamic>> loaded = [];
+        
+        data.forEach((key, value) {
+          final p = Map<String, dynamic>.from(value as Map);
+          p['key'] = key;
+          loaded.add(p);
+        });
+
+        // Sort newest first
+        loaded.sort((a, b) => 
+          (b['timestamp'] ?? '').toString().compareTo((a['timestamp'] ?? '').toString()));
+
+        setState(() {
+          _totalPosts = loaded.length;
+          _recentPosts = loaded.take(5).toList();
+          _isLoading = false;
+        });
+      } else {
+        if (mounted) setState(() { _totalPosts = 0; _recentPosts = []; _isLoading = false; });
+      }
+    });
+  }
+
+  Future<void> _logout() async {
+    await _auth.signOut();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -254,7 +313,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildLogoutBtn() {
     return GestureDetector(
-      onTap: () {},
+      onTap: _logout,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
@@ -315,13 +374,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Widget _buildStatCards() {
     final stats = [
-      _StatCard('Total Users', '12,450', Icons.people_alt_rounded,
+      _StatCard('Total Users', '$_totalUsers', Icons.people_alt_rounded,
           const Color(0xFF4A7BE8), const Color(0xFFDEEAFF)),
-      _StatCard('Active Reports', '320', Icons.bar_chart_rounded,
+      _StatCard('Active Reports', '$_totalPosts', Icons.bar_chart_rounded,
           const Color(0xFFE8914A), const Color(0xFFFFEEDD)),
-      _StatCard('Resolved Reports', '890', Icons.check_circle_rounded,
+      _StatCard('Resolved Reports', '0', Icons.check_circle_rounded,
           const Color(0xFF2ECC71), const Color(0xFFE6FAF0)),
-      _StatCard('Pending Reports', '145', Icons.cancel_rounded,
+      _StatCard('Pending Reports', '$_totalPosts', Icons.cancel_rounded,
           AppColors.primary, AppColors.communityBg),
     ];
 
@@ -734,34 +793,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildRecentReports() {
-    final reports = [
-      _Report('Pothole on Main Street', 'Pending', 'Resolved',
-          const Color(0xFFE8914A), const Color(0xFF2ECC71)),
-      _Report('Garbage Dump near Station', 'Resolved', 'New',
-          const Color(0xFF2ECC71), const Color(0xFF4A7BE8)),
-      _Report('Broken Street Light', 'New', 'New',
-          const Color(0xFF4A7BE8), const Color(0xFF4A7BE8)),
-    ];
+    if (_recentPosts.isEmpty) {
+      return _buildSectionCard(
+        title: 'Recent Reports',
+        child: Center(child: Text('No reports yet.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textLight))),
+      );
+    }
 
     return _buildSectionCard(
       title: 'Recent Reports',
       child: Column(
-        children: reports
+        children: _recentPosts
             .map((r) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Row(
             children: [
               Expanded(
-                child: Text(r.title,
+                child: Text(r['description'] ?? 'No text',
                     style: GoogleFonts.inter(
                         fontSize: 13,
                         color: AppColors.textDark,
-                        fontWeight: FontWeight.w500)),
+                        fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
               ),
               const SizedBox(width: 8),
-              _statusChip(r.currentStatus, r.currentColor),
-              const SizedBox(width: 6),
-              _statusChip(r.newStatus, r.newColor),
+              _statusChip(r['category'] ?? 'General', AppColors.primary),
             ],
           ),
         ))
