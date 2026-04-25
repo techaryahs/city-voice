@@ -1,9 +1,10 @@
-import 'package:cityvoice/view/auth/signin_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../models/post_model.dart';
+import '../voices/post_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -19,58 +20,31 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // ── Firebase ──────────────────────────────────────────────────────────
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final DatabaseReference _dbRef =
+  final DatabaseReference _usersRef =
       FirebaseDatabase.instance.ref().child('users');
+  final DatabaseReference _postsRef =
+      FirebaseDatabase.instance.ref().child('posts');
 
   // ── User state ────────────────────────────────────────────────────────
   bool _isLoading = true;
   String _name = '';
   String _email = '';
-  String _location = '';   // built from address + pincode
+  String _location = '';
   int _voicesCount = 0;
   int _supportedCount = 0;
   int _repliesCount = 0;
 
-  // ── Post lists (still static until you wire them to Firebase) ─────────
-  final List<_PostItem> _myPosts = [
-    _PostItem(
-      text: 'Garbage has been piling up in this area for several days and is not bein...',
-      timeAgo: '22h ago',
-      hasImage: true,
-    ),
-  ];
-
-  final List<_PostItem> _supportedPosts = [
-    _PostItem(
-      text: 'Streetlights on the main road have not been working for over 2 weeks now...',
-      timeAgo: '3h ago',
-      hasImage: false,
-    ),
-    _PostItem(
-      text: 'There is a continuous water leakage from a damaged pipeline in this area...',
-      timeAgo: '21h ago',
-      hasImage: true,
-    ),
-  ];
-
-  final List<_PostItem> _replies = [
-    _PostItem(
-      text: 'Totally agree, this needs immediate attention from the authorities.',
-      timeAgo: '1d ago',
-      hasImage: false,
-    ),
-  ];
-
-  // ── Lifecycle ─────────────────────────────────────────────────────────
+  List<Map<String, dynamic>> _myPostsList = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
-      setState(() => _selectedTab = _tabController.index);
+      if (mounted) setState(() => _selectedTab = _tabController.index);
     });
     _fetchUserData();
+    _listenToMyPosts();
   }
 
   @override
@@ -79,14 +53,50 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.dispose();
   }
 
-  // ── Data fetching ─────────────────────────────────────────────────────
+  // ── Live Data Listening ───────────────────────────────────────────────
+
+  void _listenToMyPosts() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    _postsRef.orderByChild('uid').equalTo(user.uid).onValue.listen((event) {
+      if (event.snapshot.value != null) {
+        final rawData = Map<String, dynamic>.from(event.snapshot.value as Map);
+        final List<Map<String, dynamic>> loadedPosts = [];
+
+        rawData.forEach((key, value) {
+          final post = Map<String, dynamic>.from(value as Map);
+          post['key'] = key;
+          loadedPosts.add(post);
+        });
+
+        // Sort by timestamp newest first
+        loadedPosts.sort((a, b) =>
+            (b['timestamp'] ?? '').toString().compareTo((a['timestamp'] ?? '').toString()));
+
+        if (mounted) {
+          setState(() {
+            _myPostsList = loadedPosts;
+            _voicesCount = loadedPosts.length;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _myPostsList = [];
+            _voicesCount = 0;
+          });
+        }
+      }
+    });
+  }
 
   Future<void> _fetchUserData() async {
     try {
       final user = _auth.currentUser;
       if (user == null) return;
 
-      final snapshot = await _dbRef.child(user.uid).get();
+      final snapshot = await _usersRef.child(user.uid).get();
       if (!mounted) return;
 
       if (snapshot.exists) {
@@ -103,7 +113,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               .join(', ');
         });
       } else {
-        // Fallback to auth email if DB record missing
         setState(() {
           _email = user.email ?? '';
           _name = user.displayName ?? 'User';
@@ -156,13 +165,21 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (confirmed != true) return;
 
     await _auth.signOut();
+  }
 
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const SignInScreen()),
-      (route) => false,
-    );
+  // ── Build Utility ─────────────────────────────────────────────────────
+
+  String _getTimeAgo(String timestamp) {
+    try {
+      final dt = DateTime.parse(timestamp);
+      final diff = DateTime.now().difference(dt);
+      if (diff.inDays > 0) return '${diff.inDays}d ago';
+      if (diff.inHours > 0) return '${diff.inHours}h ago';
+      if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+      return 'Just now';
+    } catch (_) {
+      return '';
+    }
   }
 
   // ── Build ─────────────────────────────────────────────────────────────
@@ -195,9 +212,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           body: TabBarView(
             controller: _tabController,
             children: [
-              _buildPostList(_myPosts),
-              _buildPostList(_supportedPosts),
-              _buildPostList(_replies),
+              _buildPostList(_myPostsList, "You haven't raised any voices yet."),
+              _buildEmptyState("No supported posts yet."),
+              _buildEmptyState("No replies yet."),
             ],
           ),
         ),
@@ -213,7 +230,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       child: Column(
         children: [
-          // Logout button top right
           Align(
             alignment: Alignment.centerRight,
             child: GestureDetector(
@@ -224,18 +240,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                 decoration: BoxDecoration(
                   color: AppColors.background,
                   shape: BoxShape.circle,
-                  border:
-                      Border.all(color: Colors.black.withOpacity(0.07)),
+                  border: Border.all(color: Colors.black.withOpacity(0.07)),
                 ),
-                child: Icon(Icons.logout_rounded,
+                child: const Icon(Icons.logout_rounded,
                     size: 18, color: AppColors.textMedium),
               ),
             ),
           ),
-
           const SizedBox(height: 4),
-
-          // Avatar
           Container(
             width: 84,
             height: 84,
@@ -265,10 +277,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ),
-
           const SizedBox(height: 14),
-
-          // Name
           Text(
             _name,
             style: GoogleFonts.inter(
@@ -278,10 +287,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               letterSpacing: -0.4,
             ),
           ),
-
           const SizedBox(height: 4),
-
-          // Email
           Text(
             _email,
             style: GoogleFonts.inter(
@@ -289,15 +295,12 @@ class _ProfileScreenState extends State<ProfileScreen>
               color: AppColors.textLight,
             ),
           ),
-
           if (_location.isNotEmpty) ...[
             const SizedBox(height: 6),
-
-            // Location
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.location_on_outlined,
+                const Icon(Icons.location_on_outlined,
                     size: 13, color: AppColors.primary),
                 const SizedBox(width: 3),
                 Text(
@@ -311,25 +314,20 @@ class _ProfileScreenState extends State<ProfileScreen>
               ],
             ),
           ],
-
           const SizedBox(height: 14),
-
-          // Edit profile button
           GestureDetector(
             onTap: () {},
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.background,
                 borderRadius: BorderRadius.circular(100),
-                border: Border.all(
-                    color: AppColors.primary.withOpacity(0.3)),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.edit_outlined,
+                  const Icon(Icons.edit_outlined,
                       size: 14, color: AppColors.primary),
                   const SizedBox(width: 6),
                   Text(
@@ -471,7 +469,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: GestureDetector(
               onTap: () {
                 _tabController.animateTo(i);
-                setState(() => _selectedTab = i);
+                if (mounted) setState(() => _selectedTab = i);
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -497,9 +495,36 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ── Post List ─────────────────────────────────────────────────────────
+  // ── Post Lists ────────────────────────────────────────────────────────
 
-  Widget _buildPostList(List<_PostItem> posts) {
+  Widget _buildEmptyState(String message) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      children: [
+        SizedBox(
+          height: 150,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.hourglass_empty_rounded,
+                  size: 40, color: AppColors.textLight.withOpacity(0.5)),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                style: GoogleFonts.inter(color: AppColors.textLight, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildVisionCard(),
+      ],
+    );
+  }
+
+  Widget _buildPostList(List<Map<String, dynamic>> posts, String emptyMessage) {
+    if (posts.isEmpty) return _buildEmptyState(emptyMessage);
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       children: [
@@ -510,9 +535,21 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildPostItem(_PostItem post) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+  Widget _buildPostItem(Map<String, dynamic> post) {
+    final String text = post['description'] ?? '';
+    final String timestamp = post['timestamp'] ?? '';
+    final String imageUrl = post['image_url'] ?? '';
+
+    return GestureDetector(
+      onTap: () {
+        final voicePost = VoicePost.fromMap(post['key'] ?? '', post);
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (c) => PostDetailScreen(post: voicePost)),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
@@ -526,7 +563,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
       child: Row(
         children: [
-          // Thumbnail
           ClipRRect(
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(16),
@@ -535,18 +571,16 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Container(
               width: 80,
               height: 80,
-              color: post.hasImage
-                  ? const Color(0xFFB5C4A0)
-                  : AppColors.background,
-              child: post.hasImage
-                  ? Icon(Icons.image_outlined,
-                      color: Colors.white.withOpacity(0.6), size: 28)
-                  : Icon(Icons.chat_bubble_outline_rounded,
+              color: AppColors.background,
+              child: imageUrl.isNotEmpty
+                  ? Image.network(imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.image_outlined, color: AppColors.textLight, size: 28))
+                  : const Icon(Icons.chat_bubble_outline_rounded,
                       color: AppColors.textLight, size: 24),
             ),
           ),
-
-          // Text
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -554,7 +588,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    post.text,
+                    text,
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       color: AppColors.textDark,
@@ -565,7 +599,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    post.timeAgo,
+                    _getTimeAgo(timestamp),
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: AppColors.textLight,
@@ -577,8 +611,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ── Vision Card ───────────────────────────────────────────────────────
 
@@ -599,17 +634,16 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Our Vision heading
           Row(
             children: [
               Container(
                 width: 36,
                 height: 36,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: AppColors.hyperLocalBg,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.hub_outlined,
+                child: const Icon(Icons.hub_outlined,
                     size: 18, color: AppColors.hyperLocalIcon),
               ),
               const SizedBox(width: 10),
@@ -623,9 +657,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ],
           ),
-
           const SizedBox(height: 14),
-
           Text(
             'A world where every neighborhood has a calm, trusted voice for the change it wants to see.',
             style: GoogleFonts.inter(
@@ -634,15 +666,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               height: 1.6,
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // Divider
           Divider(color: Colors.black.withOpacity(0.07)),
-
           const SizedBox(height: 14),
-
-          // Founder note
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -696,10 +722,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          // Founders address
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -750,16 +773,4 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
-}
-
-class _PostItem {
-  final String text;
-  final String timeAgo;
-  final bool hasImage;
-
-  const _PostItem({
-    required this.text,
-    required this.timeAgo,
-    required this.hasImage,
-  });
 }
