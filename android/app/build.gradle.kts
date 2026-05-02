@@ -33,7 +33,7 @@ android {
         applicationId = "com.amit.cityvoice"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
+        versionCode = 2
         versionName = flutter.versionName
     }
 
