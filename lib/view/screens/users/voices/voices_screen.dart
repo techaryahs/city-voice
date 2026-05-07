@@ -364,7 +364,7 @@ class _VoicesScreenState extends State<VoicesScreen> {
 
                   _buildActionChip(
                     icon: Icons.chat_bubble_outline_rounded,
-                    label: '${post.replies} Replies',
+                    label: '${post.replies} Responses',
                     color: AppColors.conversationalIcon,
                     onTap: () => Navigator.push(
                       context,

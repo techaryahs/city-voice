@@ -121,7 +121,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: Row(
                       children: [
                         Text(
-                          'Replies',
+                          'Responses',
                           style: GoogleFonts.inter(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -176,7 +176,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               Icon(Icons.chat_bubble_outline_rounded, size: 48, color: AppColors.textLight.withOpacity(0.5)),
                               const SizedBox(height: 16),
                               Text(
-                                'No replies yet. Be the first to speak!',
+                                'No responses yet. Be the first to respond!',
                                 style: GoogleFonts.inter(color: AppColors.textLight, fontSize: 13),
                               ),
                             ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../models/post_model.dart';
 import '../voices/post_detail_screen.dart';
@@ -22,12 +23,17 @@ class _LiveIssue {
   factory _LiveIssue.fromSnapshot(DataSnapshot snap, LatLng fallbackPos) {
     final post = VoicePost.fromSnapshot(snap);
     
-    // Generate a slightly randomized position if none exists 
-    // to make the map look "active" across the community.
-    final Random r = Random(snap.key.hashCode);
-    final double latOffset = (r.nextDouble() - 0.5) * 0.08;
-    final double lngOffset = (r.nextDouble() - 0.5) * 0.08;
-    final LatLng pos = LatLng(fallbackPos.latitude + latOffset, fallbackPos.longitude + lngOffset);
+    LatLng pos;
+    if (post.latitude != null && post.longitude != null) {
+      pos = LatLng(post.latitude!, post.longitude!);
+    } else {
+      // Generate a slightly randomized position if none exists 
+      // to make the map look "active" across the community for old data.
+      final Random r = Random(snap.key.hashCode);
+      final double latOffset = (r.nextDouble() - 0.5) * 0.08;
+      final double lngOffset = (r.nextDouble() - 0.5) * 0.08;
+      pos = LatLng(fallbackPos.latitude + latOffset, fallbackPos.longitude + lngOffset);
+    }
 
     return _LiveIssue(
       post:     post,
@@ -49,8 +55,39 @@ class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
   final DatabaseReference _postsRef = FirebaseDatabase.instance.ref('posts');
 
-  // Center point (Navi Mumbai / Pune area roughly)
-  final LatLng _centerLocation = const LatLng(19.0330, 73.0297);
+  // Center point (Navi Mumbai / Pune area roughly as default)
+  LatLng _centerLocation = const LatLng(19.0330, 73.0297);
+  
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocation();
+  }
+
+  Future<void> _getUserLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (mounted) {
+        setState(() {
+          _centerLocation = LatLng(position.latitude, position.longitude);
+        });
+        _mapController.move(_centerLocation, 12.0);
+      }
+    } catch (e) {
+      debugPrint('Error fetching user location for map: $e');
+    }
+  }
   
   _LiveIssue? _selectedIssue;
   String _selectedFilter = 'All';

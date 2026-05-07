@@ -4,6 +4,7 @@ import 'package:cityvoice/view/screens/users/raise_voice/raise_voice_page.dart';
 import 'package:cityvoice/view/screens/users/voices/voices_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../../core/constants/app_colors.dart';
 import 'maps/map_screen.dart';
 import 'notification/alerts_screen.dart';
@@ -24,6 +25,27 @@ class _MainScreenState extends State<MainScreen> {
     const AlertsScreen(),  // Alerts
     const ProfileScreen(),  // Profile
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _requestLocationPermission();
+  }
+
+  Future<void> _requestLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

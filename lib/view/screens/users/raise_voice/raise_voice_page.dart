@@ -5,6 +5,10 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mailer/mailer.dart' hide Location;
+import 'package:mailer/smtp_server.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../../../../core/constants/app_colors.dart';
 
 // ── Category model ────────────────────────────────────────────────────────────
@@ -41,12 +45,66 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
   File?   _image;
   int     _selectedCategory = 0;
   bool    _isLoading        = false;
+  bool    _isFetchingLocation = false;
+  
+  double? _exactLat;
+  double? _exactLng;
+  String? _fetchedAddress;
 
   // Firebase refs
   final _auth       = FirebaseAuth.instance;
   final _dbRef      = FirebaseDatabase.instance.ref('posts');
   final _usersRef   = FirebaseDatabase.instance.ref('users');
   final _storageRef = FirebaseStorage.instance.ref();
+
+  @override
+  void initState() {
+    super.initState();
+    _getCurrentLocation();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isFetchingLocation = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+        final parts = [place.subLocality, place.locality, place.administrativeArea]
+            .where((p) => p != null && p!.isNotEmpty)
+            .toList();
+        
+        final address = parts.join(', ');
+        
+        if (mounted) {
+          setState(() {
+            _exactLat = position.latitude;
+            _exactLng = position.longitude;
+            _fetchedAddress = address;
+            _locationController.text = address;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting location: $e');
+    } finally {
+      if (mounted) setState(() => _isFetchingLocation = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -143,6 +201,26 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
 
   // ── Upload & save post ──────────────────────────────────────────────────────
 
+  Future<void> _sendEmailNotification(String posterName, String category, String location, String desc) async {
+    const String username = 'iec.aryahs@gmail.com';
+    // Use the 16-character app password (stripped trailing dot if any)
+    const String password = 'mytocsnukxtqtcdn';
+
+    final smtpServer = gmail(username, password);
+
+    final message = Message()
+      ..from = const Address(username, 'CityVoice App')
+      ..recipients.add(username)
+      ..subject = 'New Voice Raised: $category at $location'
+      ..text = 'A new voice has been raised by $posterName.\n\nCategory: $category\nLocation: $location\nDescription:\n$desc';
+
+    try {
+      await send(message, smtpServer);
+    } catch (e) {
+      debugPrint('Error sending email: $e');
+    }
+  }
+
   Future<void> _uploadPost() async {
     final desc     = _descController.text.trim();
     final location = _locationController.text.trim();
@@ -164,10 +242,18 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
 
       // ── 1. Fetch poster's name from DB ───────────────────────────────────
       String posterName = 'Anonymous';
+      bool isPrivateProfile = false;
+
       final userSnap = await _usersRef.child(user.uid).get();
+
       if (userSnap.exists) {
         final data = Map<String, dynamic>.from(userSnap.value as Map);
-        posterName = (data['name'] ?? 'Anonymous').toString();
+
+        isPrivateProfile = (data['isPrivateProfile'] ?? false) == true;
+
+        if (!isPrivateProfile) {
+          posterName = (data['name'] ?? 'Anonymous').toString();
+        }
       }
 
       // ── 2. Upload image (optional) ───────────────────────────────────────
@@ -179,18 +265,37 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
         imageUrl = await task.ref.getDownloadURL();
       }
 
+      // ── 2.5 Geocode location ────────────────────────────────────────────
+      double? lat = _exactLat;
+      double? lng = _exactLng;
+      if (lat == null || lng == null) {
+        throw Exception("Unable to fetch precise GPS location");
+      }
+
       // ── 3. Save post to Realtime Database ────────────────────────────────
       await _dbRef.push().set({
         'uid':         user.uid,
         'name':        posterName,
+        'isAnonymous': isPrivateProfile,
         'description': desc,
         'location':    location,
+        'latitude':    lat,
+        'longitude':   lng,
         'category':    _categories[_selectedCategory].label,
         'image_url':   imageUrl ?? '',
         'timestamp':   DateTime.now().toIso8601String(),
         'supports':    0,
         'replies':     0,
       });
+
+      // ── Send Email ───────────────────────────────────────────────────────
+      final actualName = (userSnap.value as Map)['name'] ?? 'Unknown';
+      await _sendEmailNotification(
+        actualName.toString(),
+        _categories[_selectedCategory].label,
+        location,
+        desc,
+      );
 
       // ── 4. Success ───────────────────────────────────────────────────────
       if (!mounted) return;
@@ -574,6 +679,13 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
           hintText: 'e.g. Shivaji Nagar, Pune',
           hintStyle: GoogleFonts.inter(fontSize: 14, color: AppColors.textLight),
           prefixIcon: const Icon(Icons.location_on_outlined, color: AppColors.primary, size: 20),
+          suffixIcon: IconButton(
+            icon: _isFetchingLocation 
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.my_location_rounded, color: AppColors.primary, size: 20),
+            onPressed: _isFetchingLocation ? null : _getCurrentLocation,
+            tooltip: 'Use current location',
+          ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),

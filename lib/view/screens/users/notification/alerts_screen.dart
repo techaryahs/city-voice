@@ -1,40 +1,221 @@
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../../../../core/constants/app_colors.dart';
 
-class AlertsScreen extends StatelessWidget {
+class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
 
-  final List<_AlertItem> _alerts = const [
-    _AlertItem(
-      icon: Icons.favorite_rounded,
-      iconColor: AppColors.primary,
-      iconBg: Color(0xFFFFF0EE),
-      title: 'Jayesh Thakare supported your voice',
-      timeAgo: '22h ago',
-    ),
-    _AlertItem(
-      icon: Icons.notifications_rounded,
-      iconColor: Color(0xFF2ECC71),
-      iconBg: Color(0xFFEEFBF4),
-      title: 'Welcome to CityVoice! Test broadcast from admin..',
-      timeAgo: '1d ago',
-    ),
-    _AlertItem(
-      icon: Icons.chat_bubble_rounded,
-      iconColor: Color(0xFF1ABCCD),
-      iconBg: Color(0xFFEDF8FB),
-      title: 'Priya Sharma replied to your voice',
-      timeAgo: '2d ago',
-    ),
-    _AlertItem(
-      icon: Icons.campaign_rounded,
-      iconColor: Color(0xFF4A7BE8),
-      iconBg: Color(0xFFEEF4FF),
-      title: 'Your issue has been marked as resolved by admin',
-      timeAgo: '3d ago',
-    ),
-  ];
+  @override
+  State<AlertsScreen> createState() => _AlertsScreenState();
+}
+
+class _AlertsScreenState extends State<AlertsScreen> {
+  final DatabaseReference _postsRef =
+      FirebaseDatabase.instance.ref('posts');
+
+  List<_AlertItem> _alerts = [];
+
+  bool _isLoading = true;
+
+  String _currentArea = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNearbyAlerts();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Detect Current Area
+  // ─────────────────────────────────────────────────────────────
+
+  Future<void> _detectCurrentArea() async {
+    bool serviceEnabled =
+        await Geolocator.isLocationServiceEnabled();
+
+    if (!serviceEnabled) {
+      throw Exception("Location services disabled");
+    }
+
+    LocationPermission permission =
+        await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.deniedForever ||
+        permission == LocationPermission.denied) {
+      throw Exception("Location permission denied");
+    }
+
+    Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.best,
+    );
+
+    List<Placemark> placemarks =
+        await placemarkFromCoordinates(
+      position.latitude,
+      position.longitude,
+    );
+
+    if (placemarks.isNotEmpty) {
+      final place = placemarks.first;
+
+      _currentArea =
+          place.subLocality?.trim() ??
+          place.locality?.trim() ??
+          '';
+
+      debugPrint("Current Area: $_currentArea");
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Load Nearby Alerts
+  // ─────────────────────────────────────────────────────────────
+
+  Future<void> _loadNearbyAlerts() async {
+    try {
+      await _detectCurrentArea();
+
+      final snapshot = await _postsRef.get();
+
+      List<_AlertItem> loadedAlerts = [];
+
+      if (snapshot.exists) {
+        final raw =
+            Map<String, dynamic>.from(snapshot.value as Map);
+
+        raw.forEach((key, value) {
+          final post =
+              Map<String, dynamic>.from(value);
+
+          final String location =
+              (post['location'] ?? '')
+                  .toString()
+                  .toLowerCase();
+
+          final String category =
+              (post['category'] ?? 'Issue')
+                  .toString();
+
+          final String area =
+              _currentArea.toLowerCase();
+
+          // Match nearby area
+          if (location.contains(area) ||
+              area.contains(location)) {
+            loadedAlerts.add(
+              _AlertItem(
+                icon: _getCategoryIcon(category),
+                iconColor:
+                    _getCategoryColor(category),
+                iconBg:
+                    _getCategoryBg(category),
+                title:
+                    '$category issue reported near ${post['location']}',
+                timeAgo: 'Nearby Area',
+              ),
+            );
+          }
+        });
+      }
+
+      if (mounted) {
+        setState(() {
+          _alerts = loadedAlerts;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading alerts: $e");
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Category Styling
+  // ─────────────────────────────────────────────────────────────
+
+  IconData _getCategoryIcon(String cat) {
+    switch (cat.toLowerCase()) {
+      case 'roads':
+        return Icons.add_road_rounded;
+
+      case 'water':
+        return Icons.water_drop_rounded;
+
+      case 'garbage':
+        return Icons.delete_outline_rounded;
+
+      case 'electricity':
+        return Icons.bolt_rounded;
+
+      case 'safety':
+        return Icons.shield_rounded;
+
+      default:
+        return Icons.campaign_rounded;
+    }
+  }
+
+  Color _getCategoryColor(String cat) {
+    switch (cat.toLowerCase()) {
+      case 'roads':
+        return AppColors.primary;
+
+      case 'water':
+        return const Color(0xFF4A7BE8);
+
+      case 'garbage':
+        return const Color(0xFF2ECC71);
+
+      case 'electricity':
+        return const Color(0xFFF39C12);
+
+      case 'safety':
+        return const Color(0xFF9B59B6);
+
+      default:
+        return const Color(0xFF1ABCCD);
+    }
+  }
+
+  Color _getCategoryBg(String cat) {
+    switch (cat.toLowerCase()) {
+      case 'roads':
+        return const Color(0xFFFFF0EE);
+
+      case 'water':
+        return const Color(0xFFEEF4FF);
+
+      case 'garbage':
+        return const Color(0xFFEEFBF4);
+
+      case 'electricity':
+        return const Color(0xFFFFFAEE);
+
+      case 'safety':
+        return const Color(0xFFF5EEFF);
+
+      default:
+        return const Color(0xFFEDF8FB);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // UI
+  // ─────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -42,19 +223,37 @@ class AlertsScreen extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              CrossAxisAlignment.start,
           children: [
             _buildHeader(),
+
             const SizedBox(height: 8),
+
             Expanded(
-              child: _alerts.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                itemCount: _alerts.length,
-                itemBuilder: (context, index) =>
-                    _buildAlertCard(_alerts[index], index),
-              ),
+              child: _isLoading
+                  ? const Center(
+                      child:
+                          CircularProgressIndicator(),
+                    )
+                  : _alerts.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          padding:
+                              const EdgeInsets.fromLTRB(
+                            16,
+                            8,
+                            16,
+                            100,
+                          ),
+                          itemCount: _alerts.length,
+                          itemBuilder:
+                              (context, index) =>
+                                  _buildAlertCard(
+                            _alerts[index],
+                            index,
+                          ),
+                        ),
             ),
           ],
         ),
@@ -62,16 +261,20 @@ class AlertsScreen extends StatelessWidget {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────
+
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
       color: AppColors.white,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+      padding:
+          const EdgeInsets.fromLTRB(20, 20, 20, 18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
           Text(
-            'Notifications',
+            'Nearby Alerts',
             style: GoogleFonts.inter(
               fontSize: 26,
               fontWeight: FontWeight.w800,
@@ -79,9 +282,13 @@ class AlertsScreen extends StatelessWidget {
               letterSpacing: -0.5,
             ),
           ),
+
           const SizedBox(height: 4),
+
           Text(
-            'Echoes from your community',
+            _currentArea.isEmpty
+                ? 'Fetching nearby issues...'
+                : 'Issues around $_currentArea',
             style: GoogleFonts.inter(
               fontSize: 13,
               color: AppColors.textLight,
@@ -92,20 +299,30 @@ class AlertsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildAlertCard(_AlertItem alert, int index) {
-    final bool isUnread = index < 2; // first two are unread
+  // ─────────────────────────────────────────────────────────────
+
+  Widget _buildAlertCard(
+      _AlertItem alert,
+      int index,
+      ) {
+    final bool isUnread = index < 2;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(16),
         border: isUnread
-            ? Border.all(color: AppColors.primary.withOpacity(0.15))
+            ? Border.all(
+                color: AppColors.primary
+                    .withOpacity(0.15),
+              )
             : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color:
+                Colors.black.withOpacity(0.04),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -113,16 +330,22 @@ class AlertsScreen extends StatelessWidget {
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius:
+            BorderRadius.circular(16),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius:
+              BorderRadius.circular(16),
           onTap: () {},
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding:
+                const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
               children: [
-                // Icon
                 Container(
                   width: 44,
                   height: 44,
@@ -130,52 +353,78 @@ class AlertsScreen extends StatelessWidget {
                     color: alert.iconBg,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(alert.icon, color: alert.iconColor, size: 20),
+                  child: Icon(
+                    alert.icon,
+                    color: alert.iconColor,
+                    size: 20,
+                  ),
                 ),
 
                 const SizedBox(width: 14),
 
-                // Text
                 Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
                     children: [
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment:
+                            CrossAxisAlignment
+                                .start,
                         children: [
                           Expanded(
                             child: Text(
                               alert.title,
-                              style: GoogleFonts.inter(
+                              style:
+                                  GoogleFonts.inter(
                                 fontSize: 14,
-                                fontWeight: isUnread
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: AppColors.textDark,
+                                fontWeight:
+                                    isUnread
+                                        ? FontWeight
+                                            .w600
+                                        : FontWeight
+                                            .w400,
+                                color:
+                                    AppColors
+                                        .textDark,
                                 height: 1.45,
                               ),
                             ),
                           ),
+
                           if (isUnread) ...[
-                            const SizedBox(width: 8),
+                            const SizedBox(
+                                width: 8),
+
                             Container(
                               width: 8,
                               height: 8,
-                              margin: const EdgeInsets.only(top: 4),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
+                              margin:
+                                  const EdgeInsets
+                                      .only(
+                                top: 4,
+                              ),
+                              decoration:
+                                  const BoxDecoration(
+                                color: AppColors
+                                    .primary,
+                                shape: BoxShape
+                                    .circle,
                               ),
                             ),
                           ],
                         ],
                       ),
+
                       const SizedBox(height: 4),
+
                       Text(
                         alert.timeAgo,
-                        style: GoogleFonts.inter(
+                        style:
+                            GoogleFonts.inter(
                           fontSize: 12,
-                          color: AppColors.textLight,
+                          color: AppColors
+                              .textLight,
                         ),
                       ),
                     ],
@@ -189,10 +438,13 @@ class AlertsScreen extends StatelessWidget {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment:
+            MainAxisAlignment.center,
         children: [
           Container(
             width: 72,
@@ -201,21 +453,28 @@ class AlertsScreen extends StatelessWidget {
               color: AppColors.communityBg,
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.notifications_off_outlined,
-                size: 32, color: AppColors.primary),
+            child: Icon(
+              Icons.notifications_off_outlined,
+              size: 32,
+              color: AppColors.primary,
+            ),
           ),
+
           const SizedBox(height: 16),
+
           Text(
-            'No notifications yet',
+            'No nearby alerts',
             style: GoogleFonts.inter(
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: AppColors.textDark,
             ),
           ),
+
           const SizedBox(height: 6),
+
           Text(
-            'When someone supports or replies\nto your voice, it shows up here.',
+            'No issues were found\nnear your location.',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 13,
@@ -228,6 +487,8 @@ class AlertsScreen extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────
 
 class _AlertItem {
   final IconData icon;

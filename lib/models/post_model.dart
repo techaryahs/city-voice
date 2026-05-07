@@ -6,6 +6,8 @@ class VoicePost {
   final String name;
   final String description;
   final String location;
+  final double? latitude;
+  final double? longitude;
   final String category;
   final String timestamp;
   final String imageUrl;
@@ -20,6 +22,8 @@ class VoicePost {
     required this.name,
     required this.description,
     required this.location,
+    this.latitude,
+    this.longitude,
     required this.category,
     required this.timestamp,
     required this.imageUrl,
@@ -36,6 +40,8 @@ class VoicePost {
       name: data['name'] ?? 'User',
       description: data['description'] ?? '',
       location: data['location'] ?? '',
+      latitude: (data['latitude'] as num?)?.toDouble(),
+      longitude: (data['longitude'] as num?)?.toDouble(),
       category: data['category'] ?? 'General',
       timestamp: data['timestamp'] ?? '',
       imageUrl: data['image_url'] ?? '',
@@ -54,6 +60,8 @@ class VoicePost {
       name: data['name'] ?? 'User',
       description: data['description'] ?? '',
       location: data['location'] ?? '',
+      latitude: (data['latitude'] as num?)?.toDouble(),
+      longitude: (data['longitude'] as num?)?.toDouble(),
       category: data['category'] ?? 'General',
       timestamp: data['timestamp'] ?? '',
       imageUrl: data['image_url'] ?? '',

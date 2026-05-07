@@ -36,6 +36,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   List<Map<String, dynamic>> _myPostsList = [];
 
+  bool _isPrivateProfile = false;
+
   @override
   void initState() {
     super.initState();
@@ -91,7 +93,25 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
 
+  Future<void> _togglePrivateProfile(bool value) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      await _usersRef.child(user.uid).update({
+        'isPrivateProfile': value,
+      });
+
+      setState(() {
+        _isPrivateProfile = value;
+      });
+    } catch (e) {
+      debugPrint('Error updating private profile: $e');
+    }
+  }
+
   Future<void> _fetchUserData() async {
+    
     try {
       final user = _auth.currentUser;
       if (user == null) return;
@@ -111,6 +131,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           _location = [address, pincode]
               .where((s) => s.isNotEmpty)
               .join(', ');
+          _isPrivateProfile =
+              (data['isPrivateProfile'] ?? false) == true;
         });
       } else {
         setState(() {
@@ -214,7 +236,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               _buildPostList(_myPostsList, "You haven't raised any voices yet."),
               _buildEmptyState("No supported posts yet."),
-              _buildEmptyState("No replies yet."),
+              _buildEmptyState("No responses yet."),
             ],
           ),
         ),
@@ -342,6 +364,79 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ),
           ),
+          const SizedBox(height: 18),
+
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.black.withOpacity(0.06),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: _isPrivateProfile
+                        ? Colors.orange.withOpacity(0.12)
+                        : AppColors.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _isPrivateProfile
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    color: _isPrivateProfile
+                        ? Colors.orange
+                        : AppColors.primary,
+                  ),
+                ),
+
+                const SizedBox(width: 14),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Private Profile',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+
+                      const SizedBox(height: 4),
+
+                      Text(
+                        _isPrivateProfile
+                            ? 'Your posts will appear anonymously'
+                            : 'Your name will be visible on posts',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                Switch(
+                  value: _isPrivateProfile,
+                  activeColor: AppColors.primary,
+                  onChanged: _togglePrivateProfile,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -387,7 +482,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             iconColor: AppColors.conversationalIcon,
             iconBg: AppColors.conversationalBg,
             count: _repliesCount,
-            label: 'REPLIES',
+            label: 'RESPONSES',
           ),
         ],
       ),
@@ -448,7 +543,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   // ── Tab Bar ───────────────────────────────────────────────────────────
 
   Widget _buildTabBar() {
-    final tabs = ['My Posts', 'Supported', 'Replies'];
+    final tabs = ['My Posts', 'Supported', 'Responses'];
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
