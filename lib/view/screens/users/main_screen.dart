@@ -65,7 +65,7 @@ class _MainScreenState extends State<MainScreen> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: const LinearGradient(
-          colors: [Color(0xFFFF7B5F), AppColors.primary],
+          colors: [Color(0xFF4364F7), AppColors.primary],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),

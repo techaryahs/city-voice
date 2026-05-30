@@ -21,12 +21,62 @@ class _Category {
 }
 
 const _categories = [
-  _Category('Garbage',     Icons.delete_outline_rounded,      Color(0xFF2ECC71), Color(0xFFEEFBF4)),
-  _Category('Roads',       Icons.construction_rounded,         Color(0xFFE8614A), Color(0xFFFFF0EE)),
-  _Category('Water',       Icons.water_drop_outlined,          Color(0xFF4A7BE8), Color(0xFFEEF4FF)),
-  _Category('Electricity', Icons.bolt_outlined,                Color(0xFFF39C12), Color(0xFFFFFAEE)),
-  _Category('Safety',      Icons.shield_outlined,              Color(0xFF9B59B6), Color(0xFFF5EEFF)),
-  _Category('Other',       Icons.more_horiz_rounded,           Color(0xFF1ABCCD), Color(0xFFEDF8FB)),
+
+  _Category(
+    'Roads',
+    Icons.construction_rounded,
+    Color(0xFFE8614A),
+    Color(0xFFFFF0EE),
+  ),
+
+  _Category(
+    'Footpath',
+    Icons.directions_walk_rounded,
+    Color(0xFF8E44AD),
+    Color(0xFFF5EEFF),
+  ),
+
+  _Category(
+    'Public Toilets',
+    Icons.wc_rounded,
+    Color(0xFF16A085),
+    Color(0xFFEEFFFB),
+  ),
+
+  _Category(
+    'Garbage',
+    Icons.delete_outline_rounded,
+    Color(0xFF2ECC71),
+    Color(0xFFEEFBF4),
+  ),
+
+  _Category(
+    'Garden & Trees',
+    Icons.park_rounded,
+    Color(0xFF27AE60),
+    Color(0xFFEFFAF1),
+  ),
+
+  _Category(
+    'Water',
+    Icons.water_drop_outlined,
+    Color(0xFF4A7BE8),
+    Color(0xFFEEF4FF),
+  ),
+
+  _Category(
+    'Street Lights',
+    Icons.lightbulb_outline_rounded,
+    Color(0xFFF39C12),
+    Color(0xFFFFFAEE),
+  ),
+
+  _Category(
+    'Other',
+    Icons.more_horiz_rounded,
+    Color(0xFF7F8C8D),
+    Color(0xFFF4F4F4),
+  ),
 ];
 
 // ── Main widget ───────────────────────────────────────────────────────────────
@@ -420,10 +470,24 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
                     _buildCategoryPicker(),
                     const SizedBox(height: 24),
                     _buildSectionLabel('Describe the issue'),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      'Please post only relevant civic or community issues. Unnecessary or fake voices are not allowed.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: Colors.redAccent,
+                        height: 1.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+
                     const SizedBox(height: 10),
+
                     _buildDescriptionField(),
                     const SizedBox(height: 24),
-                    _buildSectionLabel('Add a photo  (optional)'),
+                    _buildSectionLabel('Add a photo'),
                     const SizedBox(height: 10),
                     _buildImagePicker(),
                     const SizedBox(height: 24),
@@ -509,54 +573,78 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
   // ── Category picker ──────────────────────────────────────────────────────────
 
   Widget _buildCategoryPicker() {
-    return SizedBox(
-      height: 82,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, i) {
-          final cat      = _categories[i];
-          final isActive = _selectedCategory == i;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedCategory = i),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 76,
-              decoration: BoxDecoration(
-                color: isActive ? cat.color : AppColors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isActive ? cat.color : Colors.black.withOpacity(0.07),
-                  width: 1.5,
-                ),
-                boxShadow: isActive
-                    ? [BoxShadow(color: cat.color.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]
-                    : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    cat.icon,
-                    size: 22,
-                    color: isActive ? Colors.white : cat.color,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    cat.label,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isActive ? Colors.white : AppColors.textMedium,
-                    ),
-                  ),
-                ],
-              ),
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: List.generate(_categories.length, (i) {
+
+        final cat = _categories[i];
+        final isActive = _selectedCategory == i;
+
+        return GestureDetector(
+          onTap: () {
+            setState(() => _selectedCategory = i);
+          },
+
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
             ),
-          );
-        },
-      ),
+
+            decoration: BoxDecoration(
+              color: isActive ? cat.color : Colors.white,
+
+              borderRadius: BorderRadius.circular(14),
+
+              border: Border.all(
+                color: isActive
+                    ? cat.color
+                    : Colors.black.withOpacity(0.06),
+              ),
+
+              boxShadow: [
+                BoxShadow(
+                  color: isActive
+                      ? cat.color.withOpacity(0.20)
+                      : Colors.black.withOpacity(0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+
+                Icon(
+                  cat.icon,
+                  size: 16,
+                  color: isActive
+                      ? Colors.white
+                      : cat.color,
+                ),
+
+                const SizedBox(width: 6),
+
+                Text(
+                  cat.label,
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: isActive
+                        ? Colors.white
+                        : AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 

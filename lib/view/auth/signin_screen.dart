@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/users/main_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -121,6 +122,19 @@ class _SignInScreenState extends State<SignInScreen> {
     super.dispose();
   }
 
+  Future<void> _openPrivacyPolicy() async {
+    final Uri url = Uri.parse(
+      'https://cityvoice.in/privacy-policy',
+    );
+
+    if (!await launchUrl(
+      url,
+      mode: LaunchMode.externalApplication,
+    )) {
+      _showSnack("Could not open Privacy Policy");
+    }
+  }
+
   // ================= UI =================
 
   @override
@@ -162,6 +176,21 @@ class _SignInScreenState extends State<SignInScreen> {
 
                     const SizedBox(height: 28),
                     _buildSignUpRow(),
+
+                    const SizedBox(height: 18),
+
+                    GestureDetector(
+                      onTap: _openPrivacyPolicy,
+                      child: Text(
+                        'Privacy Policy',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppColors.primary,
+                          decoration: TextDecoration.underline,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
 
                     const SizedBox(height: 32),
                   ],

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../models/post_model.dart';
-import 'package:intl/intl.dart';
+
 
 class PostDetailScreen extends StatefulWidget {
   final VoicePost post;
@@ -87,29 +87,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: Text(
-          'Post Details',
-          style: GoogleFonts.inter(
-            color: AppColors.textDark,
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textDark, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      
       body: Column(
         children: [
           Expanded(
             child: CustomScrollView(
               controller: _scrollController,
               slivers: [
-                // Detailed Post header
+                // Detailed Post header with authority and progress
                 SliverToBoxAdapter(
                   child: _buildPostHeader(),
                 ),
@@ -130,27 +115,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        StreamBuilder<DatabaseEvent>(
-                          stream: _dbRef.child('posts').child(widget.post.key).child('replies').onValue,
-                          builder: (context, snap) {
-                            final count = snap.data?.snapshot.value ?? widget.post.replies;
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.communityBg,
-                                borderRadius: BorderRadius.circular(100),
-                              ),
-                              child: Text(
-                                '$count',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
                       ],
                     ),
                   ),
@@ -213,65 +177,265 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildPostHeader() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Author & Category
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                _buildAvatar(widget.post.name),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.post.name,
-                        style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.textDark),
-                      ),
-                      Text(
-                        widget.post.location,
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textLight),
-                      ),
+  return Container(
+    color: Colors.white,
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+
+        // IMAGE + BACK BUTTON
+        Stack(
+          children: [
+
+            // IMAGE
+            if (widget.post.imageUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(24),
+                ),
+                child: Image.network(
+                  widget.post.imageUrl,
+                  width: double.infinity,
+                  height: 280,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else
+              Container(
+                height: 220,
+                width: double.infinity,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFFFF7B5F),
+                      AppColors.primary,
                     ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(24),
                   ),
                 ),
-                _buildCategoryBadge(widget.post.category),
-              ],
+              ),
+
+            // DARK OVERLAY
+            Container(
+              height: widget.post.imageUrl.isNotEmpty ? 280 : 220,
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(24),
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.45),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+
+            // BACK BUTTON
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12, top: 10),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.35),
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Colors.white,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // AUTHOR & CATEGORY
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              _buildAvatar(widget.post.name),
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.post.name,
+                      style: GoogleFonts.inter(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+
+                    Text(
+                      widget.post.location,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              _buildCategoryBadge(widget.post.category),
+            ],
+          ),
+        ),
+
+        // DESCRIPTION
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+          child: Text(
+            widget.post.description,
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              color: AppColors.textMedium,
+              height: 1.7,
             ),
           ),
+        ),
 
-          // Image
-          if (widget.post.imageUrl.isNotEmpty)
-            Image.network(
-              widget.post.imageUrl,
-              width: double.infinity,
-              fit: BoxFit.cover,
+        // AUTHORITY CARD
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.communityBg,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
+            padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.notifications_active,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
 
-          // Description
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Text(
-              widget.post.description,
-              style: GoogleFonts.inter(
-                fontSize: 15,
-                color: AppColors.textMedium,
-                height: 1.6,
+                  const SizedBox(width: 10),
+
+                  Expanded(
+                    child: Text(
+                      'Authorities have been notified about this issue.',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          
+
+          // SUPPORTS & REPLIES
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Text(
+                          '${widget.post.supports}',
+                          style: GoogleFonts.inter(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Text(
+                          'Supports',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  Container(
+                    width: 1,
+                    height: 36,
+                    color: Colors.grey.shade300,
+                  ),
+
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Text(
+                          '${widget.post.replies}',
+                          style: GoogleFonts.inter(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Text(
+                          'Replies',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // TIME
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Text(
               _getTimeDisplay(widget.post.timestamp),
-              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textLight),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppColors.textLight,
+              ),
             ),
           ),
         ],
@@ -280,53 +444,55 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildReplyTile(PostReply reply) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.black.withOpacity(0.04))),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildAvatar(reply.name, size: 34, fontSize: 13),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      reply.name,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAvatar(reply.name, size: 34, fontSize: 13),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        reply.name,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
                       ),
-                    ),
-                    Text(
-                      _getTimeDisplay(reply.timestamp),
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: AppColors.textLight,
+                      Text(
+                        _getTimeDisplay(reply.timestamp),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: AppColors.textLight,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  reply.text,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: AppColors.textMedium,
-                    height: 1.5,
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    reply.text,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: AppColors.textMedium,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -390,7 +556,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Widget _buildAvatar(String name, {double size = 42, double fontSize = 16}) {
     return Container(
-      width: size, height: size,
+      width: size,
+      height: size,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFFFF7B5F), AppColors.primary],

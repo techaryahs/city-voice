@@ -13,6 +13,7 @@ class VoicePost {
   final String imageUrl;
   final int supports;
   final int replies;
+  final String status;
 
   final Map<String, dynamic> supportedBy;
 
@@ -30,6 +31,7 @@ class VoicePost {
     required this.supports,
     required this.replies,
     required this.supportedBy,
+    required this.status,
   });
 
   factory VoicePost.fromSnapshot(DataSnapshot snapshot) {
@@ -47,6 +49,7 @@ class VoicePost {
       imageUrl: data['image_url'] ?? '',
       supports: (data['supports'] as num?)?.toInt() ?? 0,
       replies: (data['replies'] as num?)?.toInt() ?? 0,
+      status: data['status'] ?? 'pending',
       supportedBy: data['supportedBy'] != null
           ? Map<String, dynamic>.from(data['supportedBy'])
           : {},
@@ -67,6 +70,7 @@ class VoicePost {
       imageUrl: data['image_url'] ?? '',
       supports: (data['supports'] as num?)?.toInt() ?? 0,
       replies: (data['replies'] as num?)?.toInt() ?? 0,
+      status: data['status'] ?? 'pending',
       supportedBy: data['supportedBy'] != null
           ? Map<String, dynamic>.from(data['supportedBy'])
           : {},

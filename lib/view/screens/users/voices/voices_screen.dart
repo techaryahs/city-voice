@@ -5,28 +5,72 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../models/post_model.dart';
 import 'post_detail_screen.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:readmore/readmore.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 
 // ── Category colour helper ────────────────────────────────────────────────────
 
 Color _catColor(String cat) {
   switch (cat.toLowerCase()) {
-    case 'garbage':     return const Color(0xFF2ECC71);
-    case 'roads':       return AppColors.primary;
-    case 'water':       return const Color(0xFF4A7BE8);
-    case 'electricity': return const Color(0xFFF39C12);
-    case 'safety':      return const Color(0xFF9B59B6);
-    default:            return const Color(0xFF1ABCCD);
+    case 'roads':
+      return AppColors.primary;
+
+    case 'footpath':
+      return const Color(0xFF8E44AD);
+
+    case 'public toilets':
+      return const Color(0xFF16A085);
+
+    case 'garbage':
+      return const Color(0xFF2ECC71);
+
+    case 'garden & trees':
+      return const Color(0xFF27AE60);
+
+    case 'water':
+      return const Color(0xFF4A7BE8);
+
+    case 'street lights':
+      return const Color(0xFFF39C12);
+
+    case 'other':
+      return const Color(0xFF7F8C8D);
+
+    default:
+      return const Color(0xFF1ABCCD);
   }
 }
 
 Color _catBg(String cat) {
   switch (cat.toLowerCase()) {
-    case 'garbage':     return const Color(0xFFEEFBF4);
-    case 'roads':       return const Color(0xFFFFF0EE);
-    case 'water':       return const Color(0xFFEEF4FF);
-    case 'electricity': return const Color(0xFFFFFAEE);
-    case 'safety':      return const Color(0xFFF5EEFF);
-    default:            return const Color(0xFFEDF8FB);
+    case 'roads':
+      return const Color(0xFFFFF0EE);
+
+    case 'footpath':
+      return const Color(0xFFF5EEFF);
+
+    case 'public toilets':
+      return const Color(0xFFEEFFFB);
+
+    case 'garbage':
+      return const Color(0xFFEEFBF4);
+
+    case 'garden & trees':
+      return const Color(0xFFEFFAF1);
+
+    case 'water':
+      return const Color(0xFFEEF4FF);
+
+    case 'street lights':
+      return const Color(0xFFFFFAEE);
+
+    case 'other':
+      return const Color(0xFFF4F4F4);
+
+    default:
+      return const Color(0xFFEDF8FB);
   }
 }
 
@@ -42,6 +86,32 @@ class VoicesScreen extends StatefulWidget {
 class _VoicesScreenState extends State<VoicesScreen> {
   final _postsRef  = FirebaseDatabase.instance.ref('posts');
   final _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  String _userLocation = 'Fetching location...';
+
+  final TextEditingController _searchController =
+  TextEditingController();
+
+  String _searchQuery = '';
+
+  String _selectedCategory = 'All';
+
+  final List<String> _categories = [
+    'All',
+    'Roads',
+    'Footpath',
+    'Public Toilets',
+    'Garbage',
+    'Garden & Trees',
+    'Water',
+    'Street Lights',
+    'Other',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _getUserLocation();
+  }
 
   // ── Support toggle ──────────────────────────────────────────────────────────
 
@@ -75,6 +145,58 @@ class _VoicesScreenState extends State<VoicesScreen> {
     });
   }
 
+  void _sharePost(VoicePost post) {
+    Share.share(
+      """
+🚨 CityVoice Issue
+
+${post.description}
+
+Support this voice on CityVoice app.
+""",
+    );
+  }
+
+  Future<void> _getUserLocation() async {
+    try {
+      bool serviceEnabled =
+      await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) return;
+
+      LocationPermission permission =
+      await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final place = placemarks.first;
+
+        setState(() {
+          _userLocation =
+          '${place.locality}, ${place.administrativeArea}';
+        });
+      }
+    } catch (e) {
+      debugPrint('Location Error: $e');
+    }
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
@@ -85,6 +207,7 @@ class _VoicesScreenState extends State<VoicesScreen> {
         child: Column(
           children: [
             _buildHeader(),
+            _buildSearchAndFilters(),
             Expanded(
               child: StreamBuilder<DatabaseEvent>(
                 stream: _postsRef.orderByChild('timestamp').onValue,
@@ -117,12 +240,50 @@ class _VoicesScreenState extends State<VoicesScreen> {
 
                   // ── Parse posts (newest first) ───────────────────────────
                   final raw    = Map<String, dynamic>.from(event.snapshot.value as Map);
-                  final posts  = raw.entries
+                  final posts = raw.entries
                       .map((e) => VoicePost.fromSnapshot(
-                            event.snapshot.child(e.key),
-                          ))
+                    event.snapshot.child(e.key),
+                  ))
+                      .where((post) {
+
+                    // ── SEARCH FILTER ───────────────────
+
+                    final matchesSearch =
+
+                        post.description
+                            .toLowerCase()
+                            .contains(_searchQuery)
+
+                            ||
+
+                            post.category
+                                .toLowerCase()
+                                .contains(_searchQuery)
+
+                            ||
+
+                            post.location
+                                .toLowerCase()
+                                .contains(_searchQuery);
+
+                    // ── CATEGORY FILTER ─────────────────
+
+                    final matchesCategory =
+
+                        _selectedCategory == 'All'
+
+                            ||
+
+                            post.category.toLowerCase() ==
+                                _selectedCategory.toLowerCase();
+
+                    return matchesSearch &&
+                        matchesCategory;
+                  })
                       .toList()
-                    ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+                    ..sort((a, b) =>
+                        b.timestamp.compareTo(a.timestamp));
 
                   return ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -165,7 +326,7 @@ class _VoicesScreenState extends State<VoicesScreen> {
                   Icon(Icons.location_on_rounded, size: 13, color: AppColors.primary),
                   const SizedBox(width: 3),
                   Text(
-                    'Near You',
+                    _userLocation,
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -176,7 +337,138 @@ class _VoicesScreenState extends State<VoicesScreen> {
               ),
             ],
           ),
-          _buildNotificationBell(),
+          // _buildNotificationBell(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchAndFilters() {
+
+    return Container(
+      color: AppColors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+
+      child: Column(
+        children: [
+
+          // ── SEARCH BAR ───────────────────────────
+
+          TextField(
+            controller: _searchController,
+
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value.toLowerCase();
+              });
+            },
+
+            decoration: InputDecoration(
+
+              hintText: 'Search voices...',
+
+              hintStyle: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textLight,
+              ),
+
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.textMedium,
+              ),
+
+              filled: true,
+              fillColor: AppColors.background,
+
+              contentPadding: const EdgeInsets.symmetric(
+                vertical: 0,
+                horizontal: 14,
+              ),
+
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // ── CATEGORY FILTERS ─────────────────────
+
+          SizedBox(
+            height: 38,
+
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+
+              itemCount: _categories.length,
+
+              separatorBuilder: (_, __) =>
+              const SizedBox(width: 10),
+
+              itemBuilder: (_, index) {
+
+                final category = _categories[index];
+
+                final isSelected =
+                    _selectedCategory == category;
+
+                return GestureDetector(
+
+                  onTap: () {
+
+                    setState(() {
+                      _selectedCategory = category;
+                    });
+                  },
+
+                  child: AnimatedContainer(
+
+                    duration:
+                    const Duration(milliseconds: 200),
+
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+
+                    decoration: BoxDecoration(
+
+                      color: isSelected
+                          ? AppColors.primary
+                          : AppColors.background,
+
+                      borderRadius:
+                      BorderRadius.circular(100),
+
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : Colors.black.withOpacity(0.06),
+                      ),
+                    ),
+
+                    child: Center(
+                      child: Text(
+
+                        category,
+
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+
+                          color: isSelected
+                              ? Colors.white
+                              : AppColors.textMedium,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -298,6 +590,32 @@ class _VoicesScreenState extends State<VoicesScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  // ── STATUS BADGE ─────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: post.status.toLowerCase() == 'resolved'
+                          ? const Color(0xFFE9F9EE)
+                          : const Color(0xFFFFF4E5),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Text(
+                      post.status.toLowerCase() == 'resolved'
+                          ? 'Resolved'
+                          : 'Pending',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: post.status.toLowerCase() == 'resolved'
+                            ? const Color(0xFF1E9E57)
+                            : const Color(0xFFE69500),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -335,43 +653,106 @@ class _VoicesScreenState extends State<VoicesScreen> {
             // ── Description ───────────────────────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Text(
+              child: ReadMoreText(
                 post.description,
+                trimLines: 2,
+                trimMode: TrimMode.Line,
+                trimCollapsedText: ' See more',
+                trimExpandedText: ' Show less',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   color: AppColors.textMedium,
                   height: 1.55,
                 ),
+                moreStyle: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+                lessStyle: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
               ),
             ),
 
             // ── Actions ───────────────────────────────────────────
+            // ── Actions ───────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
               child: Row(
                 children: [
-                  // ❤️ SUPPORT BUTTON (FIXED)
-                  _buildActionChip(
-                    icon: hasSupported
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    label: '${post.supports} Support',
-                    color: hasSupported ? Colors.red : AppColors.primary,
+
+                  // ❤️ SUPPORT
+                  GestureDetector(
                     onTap: () => _toggleSupport(post),
+                    child: Row(
+                      children: [
+                        Icon(
+                          hasSupported
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: hasSupported ? Colors.red : AppColors.textDark,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          '${post.supports}',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
 
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 22),
 
-                  _buildActionChip(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    label: '${post.replies} Responses',
-                    color: AppColors.conversationalIcon,
+                  // 💬 RESPONSES
+                  GestureDetector(
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (c) => PostDetailScreen(post: post)),
+                        builder: (c) => PostDetailScreen(post: post),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          color: AppColors.textDark,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          '${post.replies}',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+
+                  const SizedBox(width: 22),
+
+                  // 📤 SHARE
+                  GestureDetector(
+                    onTap: () => _sharePost(post),
+                    child: Icon(
+                      Icons.send_rounded,
+                      color: AppColors.textDark,
+                      size: 22,
+                    ),
+                  ),
+
+                  const Spacer(),
+
                 ],
               ),
             ),

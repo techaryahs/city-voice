@@ -108,20 +108,18 @@ class _AlertsScreenState extends State<AlertsScreen> {
               _currentArea.toLowerCase();
 
           // Match nearby area
-          if (location.contains(area) ||
-              area.contains(location)) {
-            loadedAlerts.add(
-              _AlertItem(
+          if (location.contains(area) || area.contains(location)) {
+            final String status = (post['status'] ?? '').toString().toLowerCase();
+            if (post['resolved'] != true && status != 'resolved') {
+              loadedAlerts.add(_AlertItem(
+                id: key,
                 icon: _getCategoryIcon(category),
-                iconColor:
-                    _getCategoryColor(category),
-                iconBg:
-                    _getCategoryBg(category),
-                title:
-                    '$category issue reported near ${post['location']}',
+                iconColor: _getCategoryColor(category),
+                iconBg: _getCategoryBg(category),
+                title: '$category issue reported near ${post['location']}',
                 timeAgo: 'Nearby Area',
-              ),
-            );
+              ));
+            }
           }
         });
       }
@@ -301,28 +299,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   // ─────────────────────────────────────────────────────────────
 
-  Widget _buildAlertCard(
-      _AlertItem alert,
-      int index,
-      ) {
-    final bool isUnread = index < 2;
-
+  Widget _buildAlertCard(_AlertItem alert, int index) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.white,
-        borderRadius:
-            BorderRadius.circular(16),
-        border: isUnread
-            ? Border.all(
-                color: AppColors.primary
-                    .withOpacity(0.15),
-              )
-            : null,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color:
-                Colors.black.withOpacity(0.04),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -330,21 +315,16 @@ class _AlertsScreenState extends State<AlertsScreen> {
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius:
-            BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          borderRadius:
-              BorderRadius.circular(16),
-          onTap: () {},
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            // TODO: navigate or other action
+          },
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 44,
@@ -353,78 +333,28 @@ class _AlertsScreenState extends State<AlertsScreen> {
                     color: alert.iconBg,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    alert.icon,
-                    color: alert.iconColor,
-                    size: 20,
-                  ),
+                  child: Icon(alert.icon, color: alert.iconColor, size: 20),
                 ),
-
                 const SizedBox(width: 14),
-
                 Expanded(
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment:
-                            CrossAxisAlignment
-                                .start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              alert.title,
-                              style:
-                                  GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight:
-                                    isUnread
-                                        ? FontWeight
-                                            .w600
-                                        : FontWeight
-                                            .w400,
-                                color:
-                                    AppColors
-                                        .textDark,
-                                height: 1.45,
-                              ),
-                            ),
-                          ),
-
-                          if (isUnread) ...[
-                            const SizedBox(
-                                width: 8),
-
-                            Container(
-                              width: 8,
-                              height: 8,
-                              margin:
-                                  const EdgeInsets
-                                      .only(
-                                top: 4,
-                              ),
-                              decoration:
-                                  const BoxDecoration(
-                                color: AppColors
-                                    .primary,
-                                shape: BoxShape
-                                    .circle,
-                              ),
-                            ),
-                          ],
-                        ],
+                      Text(
+                        alert.title,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: AppColors.textDark,
+                          height: 1.45,
+                        ),
                       ),
-
                       const SizedBox(height: 4),
-
                       Text(
                         alert.timeAgo,
-                        style:
-                            GoogleFonts.inter(
+                        style: GoogleFonts.inter(
                           fontSize: 12,
-                          color: AppColors
-                              .textLight,
+                          color: AppColors.textLight,
                         ),
                       ),
                     ],
@@ -491,6 +421,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
 // ─────────────────────────────────────────────────────────────
 
 class _AlertItem {
+  final String id;
   final IconData icon;
   final Color iconColor;
   final Color iconBg;
@@ -498,6 +429,7 @@ class _AlertItem {
   final String timeAgo;
 
   const _AlertItem({
+    required this.id,
     required this.icon,
     required this.iconColor,
     required this.iconBg,

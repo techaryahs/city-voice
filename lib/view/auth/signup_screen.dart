@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -24,6 +25,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirm  = true;
   bool _isLoading = false;
+  bool _acceptPolicy = false;
 
   final DatabaseReference _dbRef =
   FirebaseDatabase.instance.ref().child("users");
@@ -88,6 +90,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
+    if (!_acceptPolicy) {
+      _showSnack("Please accept Privacy Policy");
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -138,6 +145,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    final Uri url = Uri.parse(
+      'https://cityvoice.in/privacy-policy',
+    );
+
+    if (!await launchUrl(
+      url,
+      mode: LaunchMode.externalApplication,
+    )) {
+      _showSnack("Could not open Privacy Policy");
+    }
   }
 
   @override
@@ -228,6 +248,53 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           setState(() => _obscureConfirm = !_obscureConfirm),
                     ),
                     const SizedBox(height: 32),
+
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Checkbox(
+                          value: _acceptPolicy,
+                          activeColor: AppColors.primary,
+                          onChanged: (value) {
+                            setState(() {
+                              _acceptPolicy = value!;
+                            });
+                          },
+                        ),
+
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Wrap(
+                              children: [
+                                Text(
+                                  'I agree to the ',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: AppColors.textMedium,
+                                  ),
+                                ),
+
+                                GestureDetector(
+                                  onTap: _openPrivacyPolicy,
+                                  child: Text(
+                                    'Privacy Policy',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
 
                     _buildCreateAccountButton(),
                     const SizedBox(height: 28),
