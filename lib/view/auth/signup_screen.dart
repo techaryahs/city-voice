@@ -149,7 +149,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Future<void> _openPrivacyPolicy() async {
     final Uri url = Uri.parse(
-      'https://cityvoice.in/privacy-policy',
+      'https://techaryahs.github.io/cityvoiceurl/privacy-policy.html',
     );
 
     if (!await launchUrl(
