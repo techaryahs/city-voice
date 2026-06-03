@@ -77,7 +77,9 @@ Color _catBg(String cat) {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class VoicesScreen extends StatefulWidget {
-  const VoicesScreen({super.key});
+  final bool readOnly;
+
+  const VoicesScreen({super.key, this.readOnly = false});
 
   @override
   State<VoicesScreen> createState() => _VoicesScreenState();
@@ -116,6 +118,11 @@ class _VoicesScreenState extends State<VoicesScreen> {
   // ── Support toggle ──────────────────────────────────────────────────────────
 
   Future<void> _toggleSupport(VoicePost post) async {
+    if (widget.readOnly) {
+      _showBlockedNotice();
+      return;
+    }
+
     if (_currentUid.isEmpty) return;
 
     final ref = _postsRef.child(post.key);
@@ -146,6 +153,11 @@ class _VoicesScreenState extends State<VoicesScreen> {
   }
 
   void _sharePost(VoicePost post) {
+    if (widget.readOnly) {
+      _showBlockedNotice();
+      return;
+    }
+
     Share.share(
       """
 🚨 CityVoice Issue
@@ -154,6 +166,150 @@ ${post.description}
 
 Support this voice on CityVoice app.
 """,
+    );
+  }
+
+  Future<void> _reportPost(VoicePost post) async {
+    if (widget.readOnly) {
+      _showBlockedNotice();
+      return;
+    }
+
+    if (_currentUid.isEmpty) return;
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Report post',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _reportReasonTile('Fake or misleading'),
+            _reportReasonTile('Spam'),
+            _reportReasonTile('Offensive content'),
+            _reportReasonTile('Not a civic issue'),
+            _reportReasonTile('Other'),
+          ],
+        ),
+      ),
+    );
+
+    if (reason == null) return;
+
+    final reportReason =
+        reason == 'Other' ? await _showOtherReportDialog() : reason;
+
+    if (reportReason == null || reportReason.trim().isEmpty) return;
+
+    try {
+      final postRef = _postsRef.child(post.key);
+      final reportRef = postRef.child('reports').child(_currentUid);
+      final existing = await reportRef.get();
+
+      if (existing.exists) {
+        _showSnack('You already reported this post.');
+        return;
+      }
+
+      final userSnap =
+          await FirebaseDatabase.instance.ref('users').child(_currentUid).get();
+      final userData = userSnap.value is Map
+          ? Map<String, dynamic>.from(userSnap.value as Map)
+          : <String, dynamic>{};
+
+      final timestamp = DateTime.now().toIso8601String();
+      final reportData = {
+        'uid': _currentUid,
+        'reporterName': userData['name'] ?? 'User',
+        'reporterEmail': userData['email'] ?? '',
+        'reason': reportReason,
+        'timestamp': timestamp,
+        'postId': post.key,
+        'postOwnerUid': post.uid,
+        'postOwnerName': post.name,
+        'postDescription': post.description,
+        'postLocation': post.location,
+        'postImageUrl': post.imageUrl,
+      };
+
+      await reportRef.set(reportData);
+      await FirebaseDatabase.instance
+          .ref('userReports')
+          .child(_currentUid)
+          .child(post.key)
+          .set(reportData);
+
+      await postRef.runTransaction((object) {
+        if (object == null) return Transaction.abort();
+        final data = Map<String, dynamic>.from(object as Map);
+        data['reportCount'] = ((data['reportCount'] as num?)?.toInt() ?? 0) + 1;
+        return Transaction.success(data);
+      });
+
+      _showSnack('Post reported. Thank you for helping keep CityVoice safe.');
+    } catch (e) {
+      _showSnack('Failed to report post: $e');
+    }
+  }
+
+  Widget _reportReasonTile(String reason) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.flag_outlined, color: AppColors.primary),
+      title: Text(reason, style: GoogleFonts.inter(fontSize: 14)),
+      onTap: () => Navigator.pop(context, reason),
+    );
+  }
+
+  Future<String?> _showOtherReportDialog() async {
+    final controller = TextEditingController();
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Other reason',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+        ),
+        content: TextField(
+          controller: controller,
+          minLines: 3,
+          maxLines: 5,
+          decoration: InputDecoration(
+            hintText: 'Write why you are reporting this post...',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    return result;
+  }
+
+  void _showBlockedNotice() {
+    _showSnack('Your account is blocked. You can only view posts.');
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -513,7 +669,12 @@ Support this voice on CityVoice app.
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (c) => PostDetailScreen(post: post)),
+        MaterialPageRoute(
+          builder: (c) => PostDetailScreen(
+            post: post,
+            readOnly: widget.readOnly,
+          ),
+        ),
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 14),
@@ -686,7 +847,7 @@ Support this voice on CityVoice app.
 
                   // ❤️ SUPPORT
                   GestureDetector(
-                    onTap: () => _toggleSupport(post),
+                    onTap: widget.readOnly ? null : () => _toggleSupport(post),
                     child: Row(
                       children: [
                         Icon(
@@ -716,7 +877,10 @@ Support this voice on CityVoice app.
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (c) => PostDetailScreen(post: post),
+                        builder: (c) => PostDetailScreen(
+                          post: post,
+                          readOnly: widget.readOnly,
+                        ),
                       ),
                     ),
                     child: Row(
@@ -742,16 +906,53 @@ Support this voice on CityVoice app.
                   const SizedBox(width: 22),
 
                   // 📤 SHARE
-                  GestureDetector(
-                    onTap: () => _sharePost(post),
-                    child: Icon(
-                      Icons.send_rounded,
-                      color: AppColors.textDark,
-                      size: 22,
+                  if (!widget.readOnly)
+                    GestureDetector(
+                      onTap: () => _sharePost(post),
+                      child: Icon(
+                        Icons.send_rounded,
+                        color: AppColors.textDark,
+                        size: 22,
+                      ),
                     ),
-                  ),
 
                   const Spacer(),
+
+                  if (!widget.readOnly)
+                    GestureDetector(
+                      onTap: () => _reportPost(post),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF0EE),
+                          borderRadius: BorderRadius.circular(100),
+                          border: Border.all(
+                            color: AppColors.primary.withOpacity(0.18),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.flag_outlined,
+                              color: AppColors.primary,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Report',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                 ],
               ),

@@ -7,11 +7,13 @@ import '../voices/post_detail_screen.dart';
 class AllPostsScreen extends StatelessWidget {
   final List<Map<String, dynamic>> posts;
   final String title;
+  final bool readOnly;
 
   const AllPostsScreen({
     Key? key,
     required this.posts,
     required this.title,
+    this.readOnly = false,
   }) : super(key: key);
 
   @override
@@ -86,7 +88,12 @@ class AllPostsScreen extends StatelessWidget {
                 final voicePost = VoicePost.fromMap(post['key'] ?? '', post);
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => PostDetailScreen(post: voicePost)),
+                  MaterialPageRoute(
+                    builder: (_) => PostDetailScreen(
+                      post: voicePost,
+                      readOnly: readOnly,
+                    ),
+                  ),
                 );
               },
               child: Container(

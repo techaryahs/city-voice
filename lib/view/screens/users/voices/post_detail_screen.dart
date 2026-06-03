@@ -8,8 +8,13 @@ import '../../../../models/post_model.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final VoicePost post;
+  final bool readOnly;
 
-  const PostDetailScreen({super.key, required this.post});
+  const PostDetailScreen({
+    super.key,
+    required this.post,
+    this.readOnly = false,
+  });
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -31,6 +36,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _submitReply() async {
+    if (widget.readOnly) {
+      _showBlockedNotice();
+      return;
+    }
+
     final text = _commentController.text.trim();
     if (text.isEmpty || _isSubmitting) return;
 
@@ -81,6 +91,151 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  Future<void> _reportPost() async {
+    if (widget.readOnly) {
+      _showBlockedNotice();
+      return;
+    }
+
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Report post',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _reportReasonTile('Fake or misleading'),
+            _reportReasonTile('Spam'),
+            _reportReasonTile('Offensive content'),
+            _reportReasonTile('Not a civic issue'),
+            _reportReasonTile('Other'),
+          ],
+        ),
+      ),
+    );
+
+    if (reason == null) return;
+
+    final reportReason =
+        reason == 'Other' ? await _showOtherReportDialog() : reason;
+
+    if (reportReason == null || reportReason.trim().isEmpty) return;
+
+    try {
+      final postRef = _dbRef.child('posts').child(widget.post.key);
+      final reportRef = postRef.child('reports').child(user.uid);
+      final existing = await reportRef.get();
+
+      if (existing.exists) {
+        _showSnack('You already reported this post.');
+        return;
+      }
+
+      final userSnap = await _dbRef.child('users').child(user.uid).get();
+      final userData = userSnap.value is Map
+          ? Map<String, dynamic>.from(userSnap.value as Map)
+          : <String, dynamic>{};
+
+      final timestamp = DateTime.now().toIso8601String();
+      final reportData = {
+        'uid': user.uid,
+        'reporterName': userData['name'] ?? user.displayName ?? 'User',
+        'reporterEmail': userData['email'] ?? user.email ?? '',
+        'reason': reportReason,
+        'timestamp': timestamp,
+        'postId': widget.post.key,
+        'postOwnerUid': widget.post.uid,
+        'postOwnerName': widget.post.name,
+        'postDescription': widget.post.description,
+        'postLocation': widget.post.location,
+        'postImageUrl': widget.post.imageUrl,
+      };
+
+      await reportRef.set(reportData);
+      await _dbRef
+          .child('userReports')
+          .child(user.uid)
+          .child(widget.post.key)
+          .set(reportData);
+
+      await postRef.runTransaction((Object? post) {
+        if (post == null) return Transaction.abort();
+        final postMap = Map<String, dynamic>.from(post as Map);
+        postMap['reportCount'] =
+            ((postMap['reportCount'] as num?)?.toInt() ?? 0) + 1;
+        return Transaction.success(postMap);
+      });
+
+      _showSnack('Post reported. Thank you for helping keep CityVoice safe.');
+    } catch (e) {
+      _showSnack('Failed to report post: $e');
+    }
+  }
+
+  Widget _reportReasonTile(String reason) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.flag_outlined, color: AppColors.primary),
+      title: Text(reason, style: GoogleFonts.inter(fontSize: 14)),
+      onTap: () => Navigator.pop(context, reason),
+    );
+  }
+
+  Future<String?> _showOtherReportDialog() async {
+    final controller = TextEditingController();
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Other reason',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+        ),
+        content: TextField(
+          controller: controller,
+          minLines: 3,
+          maxLines: 5,
+          decoration: InputDecoration(
+            hintText: 'Write why you are reporting this post...',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    return result;
+  }
+
+  void _showBlockedNotice() {
+    _showSnack('Your account is blocked. You can only view posts.');
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -169,8 +324,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
           
-          // Sticky Input field
-          _buildInputArea(),
+          if (widget.readOnly) _buildReadOnlyBar() else _buildInputArea(),
         ],
       ),
     );
@@ -241,19 +395,38 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             // BACK BUTTON
             SafeArea(
               child: Padding(
-                padding: const EdgeInsets.only(left: 12, top: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.35),
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.arrow_back,
-                      color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                child: Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back,
+                          color: Colors.white,
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
                     ),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
+                    const Spacer(),
+                    if (!widget.readOnly)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.35),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.flag_outlined,
+                            color: Colors.white,
+                          ),
+                          onPressed: _reportPost,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -297,6 +470,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ],
           ),
         ),
+
+        if (!widget.readOnly)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: _reportPost,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF0EE),
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.18),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.flag_outlined,
+                        color: AppColors.primary,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Report',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
 
         // DESCRIPTION
         Padding(
@@ -550,6 +766,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyBar() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        MediaQuery.of(context).padding.bottom + 12,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Text(
+        'Your account is blocked. You can only view this post.',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.inter(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textDark,
+        ),
       ),
     );
   }

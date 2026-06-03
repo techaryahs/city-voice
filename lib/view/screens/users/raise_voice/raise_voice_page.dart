@@ -299,6 +299,10 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
       if (userSnap.exists) {
         final data = Map<String, dynamic>.from(userSnap.value as Map);
 
+        if (data['isBlocked'] == true || data['blocked'] == true) {
+          throw Exception('Your account is blocked. You can only view posts.');
+        }
+
         isPrivateProfile = (data['isPrivateProfile'] ?? false) == true;
 
         if (!isPrivateProfile) {

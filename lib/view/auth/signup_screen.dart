@@ -115,6 +115,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         "email": email,
         "address": address,
         "pincode": pincode,
+        "isBlocked": false,
         "createdAt": DateTime.now().toIso8601String(),
       });
 

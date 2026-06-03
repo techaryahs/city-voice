@@ -45,7 +45,9 @@ class _LiveIssue {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final bool readOnly;
+
+  const MapScreen({super.key, this.readOnly = false});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -368,7 +370,7 @@ class _MapScreenState extends State<MapScreen> {
               _sheetChip(Icons.favorite_border_rounded, '${issue.post.supports} Support', AppColors.primary, AppColors.communityBg, () {}),
               const SizedBox(width: 10),
               _sheetChip(Icons.chat_bubble_outline_rounded, '${issue.post.replies} Replies', AppColors.conversationalIcon, AppColors.conversationalBg, () {
-                 Navigator.push(context, MaterialPageRoute(builder: (c) => PostDetailScreen(post: issue.post)));
+                 Navigator.push(context, MaterialPageRoute(builder: (c) => PostDetailScreen(post: issue.post, readOnly: widget.readOnly)));
               }),
               const Spacer(),
               _viewBtn(issue.post),
@@ -391,7 +393,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Widget _viewBtn(VoicePost post) {
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => PostDetailScreen(post: post))),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => PostDetailScreen(post: post, readOnly: widget.readOnly))),
       child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFF7B5F), AppColors.primary]), borderRadius: BorderRadius.circular(100), boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 4))]), child: Text('View post', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white))),
     );
   }

@@ -10,7 +10,9 @@ import 'widgets/edit_profile_sheet.dart';
 import 'widgets/vision_card.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final bool readOnly;
+
+  const ProfileScreen({super.key, this.readOnly = false});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -30,23 +32,28 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   // ── User state ────────────────────────────────────────────────────────
   bool _isLoading = true;
+  bool _isBlocked = false;
+  bool _isClaimSubmitting = false;
   String _name = '';
   String _email = '';
   String _location = '';
   int _voicesCount = 0;
   int _supportedCount = 0;
   int _repliesCount = 0;
+  int _reportedCount = 0;
 
   List<Map<String, dynamic>> _myPostsList = [];
   List<Map<String, dynamic>> _supportedPostsList = [];
   List<Map<String, dynamic>> _respondedPostsList = [];
+  List<Map<String, dynamic>> _reportedPostsList = [];
 
   bool _isPrivateProfile = false;
+  final TextEditingController _claimController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (mounted) setState(() => _selectedTab = _tabController.index);
     });
@@ -54,11 +61,13 @@ class _ProfileScreenState extends State<ProfileScreen>
     _listenToMyPosts();
     _listenToSupportedPosts();
     _listenToRespondedPosts();
+    _listenToReportedPosts();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _claimController.dispose();
     super.dispose();
   }
 
@@ -192,7 +201,108 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
   }
 
+  void _listenToReportedPosts() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    FirebaseDatabase.instance
+        .ref('userReports')
+        .child(user.uid)
+        .onValue
+        .listen((event) async {
+      if (event.snapshot.value == null) {
+        final loaded = await _loadReportsFromPosts(user.uid);
+        if (mounted) {
+          setState(() {
+            _reportedPostsList = loaded;
+            _reportedCount = loaded.length;
+          });
+        }
+        return;
+      }
+
+      final rawData = Map<String, dynamic>.from(event.snapshot.value as Map);
+      final List<Map<String, dynamic>> loaded = [];
+
+      for (final entry in rawData.entries) {
+        final postKey = entry.key;
+        if (entry.value is! Map) continue;
+
+        final report = Map<String, dynamic>.from(entry.value as Map);
+        Map<String, dynamic> post = {};
+
+        try {
+          final postSnap = await _postsRef.child(postKey).get();
+          if (postSnap.exists && postSnap.value is Map) {
+            post = Map<String, dynamic>.from(postSnap.value as Map);
+          }
+        } catch (_) {}
+
+        post['key'] = postKey;
+        post['myReport'] = report;
+        post['description'] = post['description'] ?? report['postDescription'] ?? '';
+        post['name'] = post['name'] ?? report['postOwnerName'] ?? 'User';
+        post['uid'] = post['uid'] ?? report['postOwnerUid'] ?? '';
+        post['location'] = post['location'] ?? report['postLocation'] ?? '';
+        post['image_url'] = post['image_url'] ?? report['postImageUrl'] ?? '';
+        loaded.add(post);
+      }
+
+      if (loaded.isEmpty) {
+        loaded.addAll(await _loadReportsFromPosts(user.uid));
+      }
+
+      loaded.sort((a, b) {
+        final aReport = a['myReport'] is Map
+            ? Map<String, dynamic>.from(a['myReport'] as Map)
+            : <String, dynamic>{};
+        final bReport = b['myReport'] is Map
+            ? Map<String, dynamic>.from(b['myReport'] as Map)
+            : <String, dynamic>{};
+        return (bReport['timestamp'] ?? '')
+            .toString()
+            .compareTo((aReport['timestamp'] ?? '').toString());
+      });
+
+      if (mounted) {
+        setState(() {
+          _reportedPostsList = loaded;
+          _reportedCount = loaded.length;
+        });
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _loadReportsFromPosts(String uid) async {
+    final List<Map<String, dynamic>> loaded = [];
+    final postsSnap = await _postsRef.get();
+
+    if (postsSnap.exists && postsSnap.value is Map) {
+      final postsRaw = Map<String, dynamic>.from(postsSnap.value as Map);
+      postsRaw.forEach((key, value) {
+        if (value is! Map) return;
+        final post = Map<String, dynamic>.from(value);
+        final reports = post['reports'] is Map
+            ? Map<String, dynamic>.from(post['reports'] as Map)
+            : <String, dynamic>{};
+        final userReport = reports[uid];
+        if (userReport is Map) {
+          post['key'] = key;
+          post['myReport'] = Map<String, dynamic>.from(userReport);
+          loaded.add(post);
+        }
+      });
+    }
+
+    return loaded;
+  }
+
   Future<void> _togglePrivateProfile(bool value) async {
+    if (_isBlocked) {
+      _showSnack('Your account is blocked. You can only view posts.');
+      return;
+    }
+
     try {
       final user = _auth.currentUser;
       if (user == null) return;
@@ -232,11 +342,15 @@ class _ProfileScreenState extends State<ProfileScreen>
               .join(', ');
           _isPrivateProfile =
               (data['isPrivateProfile'] ?? false) == true;
+          _isBlocked = widget.readOnly ||
+              data['isBlocked'] == true ||
+              data['blocked'] == true;
         });
       } else {
         setState(() {
           _email = user.email ?? '';
           _name = user.displayName ?? 'User';
+          _isBlocked = widget.readOnly;
         });
       }
     } catch (e) {
@@ -304,6 +418,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   void _showEditProfileSheet() {
+    if (_isBlocked) {
+      _showSnack('Your account is blocked. You can only view posts.');
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -320,6 +439,44 @@ class _ProfileScreenState extends State<ProfileScreen>
           });
         },
       ),
+    );
+  }
+
+  Future<void> _submitBlockClaim() async {
+    final message = _claimController.text.trim();
+    final user = _auth.currentUser;
+
+    if (user == null) return;
+    if (message.isEmpty) {
+      _showSnack('Please write your claim message.');
+      return;
+    }
+
+    setState(() => _isClaimSubmitting = true);
+
+    try {
+      await FirebaseDatabase.instance.ref('blockClaims').child(user.uid).push().set({
+        'uid': user.uid,
+        'name': _name,
+        'email': _email,
+        'message': message,
+        'status': 'pending',
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+
+      _claimController.clear();
+      _showSnack('Your claim has been submitted to admin.');
+    } catch (e) {
+      _showSnack('Failed to submit claim: $e');
+    } finally {
+      if (mounted) setState(() => _isClaimSubmitting = false);
+    }
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -352,9 +509,10 @@ class _ProfileScreenState extends State<ProfileScreen>
         body: TabBarView(
           controller: _tabController,
           children: [
-                        _buildPostList(_myPostsList, "You haven't raised any voices yet.", "My Posts"),
+            _buildPostList(_myPostsList, "You haven't raised any voices yet.", "My Posts"),
             _buildPostList(_supportedPostsList, "You haven't supported any posts yet.", "Supported"),
             _buildPostList(_respondedPostsList, "You haven't responded to any posts yet.", "Responses"),
+            _buildReportedPostList(),
           ],
         ),
       ),
@@ -604,6 +762,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 const SizedBox(height: 20),
                 _buildPrivateProfileCard(),
+                if (_isBlocked) ...[
+                  const SizedBox(height: 14),
+                  _buildBlockedClaimCard(),
+                ],
               ],
             ),
           ),
@@ -671,7 +833,102 @@ class _ProfileScreenState extends State<ProfileScreen>
             activeTrackColor: const Color(0xFF0D6EFD),
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: Colors.black26,
-            onChanged: _togglePrivateProfile,
+            onChanged: _isBlocked ? null : _togglePrivateProfile,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockedClaimCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF0EE),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.block_rounded, color: AppColors.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Your account is blocked',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'You can still view posts. If you think this is a mistake, submit a claim for admin review.',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: AppColors.textMedium,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.black.withOpacity(0.06)),
+            ),
+            child: TextField(
+              controller: _claimController,
+              minLines: 2,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'Write your claim...',
+                hintStyle: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textLight,
+                ),
+                border: InputBorder.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton.icon(
+              onPressed: _isClaimSubmitting ? null : _submitBlockClaim,
+              icon: _isClaimSubmitting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.gavel_outlined, size: 16),
+              label: Text(
+                _isClaimSubmitting ? 'Submitting...' : 'Submit Claim',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(100),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -719,6 +976,14 @@ class _ProfileScreenState extends State<ProfileScreen>
             iconBg: const Color(0xFFEEF2FF),
             count: _repliesCount,
             label: 'RESPONSES',
+          ),
+          _buildStatDivider(),
+          _buildStatItem(
+            icon: Icons.flag_outlined,
+            iconColor: AppColors.primary,
+            iconBg: const Color(0xFFFFF0EE),
+            count: _reportedCount,
+            label: 'REPORTED',
           ),
         ],
       ),
@@ -780,9 +1045,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildTabBar() {
     final tabs = [
-      {'label': 'My Posts', 'icon': Icons.campaign_outlined},
+      {'label': 'My', 'icon': Icons.campaign_outlined},
       {'label': 'Supported', 'icon': Icons.favorite_border_rounded},
-      {'label': 'Responses', 'icon': Icons.chat_bubble_outline_rounded},
+      {'label': 'Replies', 'icon': Icons.chat_bubble_outline_rounded},
+      {'label': 'Reported', 'icon': Icons.flag_outlined},
     ];
     return Container(
       decoration: BoxDecoration(
@@ -823,12 +1089,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                       color: isActive ? Colors.white : const Color(0xFF757575),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      tab['label'] as String,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: isActive ? Colors.white : const Color(0xFF757575),
+                    Flexible(
+                      child: Text(
+                        tab['label'] as String,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: isActive ? Colors.white : const Color(0xFF757575),
+                        ),
                       ),
                     ),
                   ],
@@ -891,7 +1161,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (c) => AllPostsScreen(posts: posts, title: tabLabel),
+                    builder: (c) => AllPostsScreen(
+                      posts: posts,
+                      title: tabLabel,
+                      readOnly: _isBlocked,
+                    ),
                   ),
                 );
               },
@@ -911,6 +1185,203 @@ class _ProfileScreenState extends State<ProfileScreen>
         const SizedBox(height: 16),
         const VisionCard(),
       ],
+    );
+  }
+
+  Widget _buildReportedPostList() {
+    if (_reportedPostsList.isEmpty) {
+      return _buildEmptyState("You haven't reported any posts yet.");
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Reported',
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF1A1A1A),
+              ),
+            ),
+            Text(
+              '$_reportedCount posts',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        ..._reportedPostsList.take(10).map((p) => _buildReportedPostItem(p)),
+        const SizedBox(height: 16),
+        const VisionCard(),
+      ],
+    );
+  }
+
+  Widget _buildReportedPostItem(Map<String, dynamic> post) {
+    final report = post['myReport'] is Map
+        ? Map<String, dynamic>.from(post['myReport'] as Map)
+        : <String, dynamic>{};
+    final String text = post['description'] ?? '';
+    final String imageUrl = post['image_url'] ?? '';
+    final String locationStr = post['location'] ?? 'Unknown Location';
+    final String posterName = post['name'] ?? 'User';
+    final String reason = report['reason'] ?? 'Reported';
+    final String reportedAt = _getTimeAgo(report['timestamp'] ?? '');
+
+    return GestureDetector(
+      onTap: () {
+        final voicePost = VoicePost.fromMap(post['key'] ?? '', post);
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (c) => PostDetailScreen(
+              post: voicePost,
+              readOnly: _isBlocked,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: 80,
+                height: 80,
+                color: const Color(0xFFFFF0EE),
+                child: imageUrl.isNotEmpty
+                    ? Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.flag_outlined, color: AppColors.primary, size: 24),
+                      )
+                    : const Icon(Icons.flag_outlined,
+                        color: AppColors.primary, size: 24),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Reported $posterName',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF1A1A1A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF0EE),
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: Text(
+                          'Reported',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    text,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textMedium,
+                      height: 1.4,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Reason: $reason',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined,
+                          size: 12, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          locationStr,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: const Color(0xFF757575),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (reportedAt.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          reportedAt,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right, color: Colors.black26),
+          ],
+        ),
+      ),
     );
   }
 
@@ -940,7 +1411,12 @@ class _ProfileScreenState extends State<ProfileScreen>
         final voicePost = VoicePost.fromMap(post['key'] ?? '', post);
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (c) => PostDetailScreen(post: voicePost)),
+          MaterialPageRoute(
+            builder: (c) => PostDetailScreen(
+              post: voicePost,
+              readOnly: _isBlocked,
+            ),
+          ),
         );
       },
       child: Container(

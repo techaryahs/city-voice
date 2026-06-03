@@ -18,12 +18,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DatabaseReference _postsRef = FirebaseDatabase.instance.ref('posts');
   final DatabaseReference _usersRef = FirebaseDatabase.instance.ref('users');
+  final DatabaseReference _blockClaimsRef =
+      FirebaseDatabase.instance.ref('blockClaims');
 
   // ── Admin Stats ───────────────────────────────────────────────────────
   int _totalUsers = 0;
   int _totalPosts = 0;
   int _resolvedPosts = 0; // Future: track status
+  int _totalPostReports = 0;
+  int _totalBlockClaims = 0;
   List<Map<String, dynamic>> _recentPosts = [];
+  List<Map<String, dynamic>> _reportedPosts = [];
+  List<Map<String, dynamic>> _blockClaims = [];
   bool _isLoading = true;
 
   final List<_NavItem> _navItems = const [
@@ -55,25 +61,79 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted && event.snapshot.value != null) {
         final data = Map<String, dynamic>.from(event.snapshot.value as Map);
         final List<Map<String, dynamic>> loaded = [];
+        final List<Map<String, dynamic>> reported = [];
+        int postReportCount = 0;
         
         data.forEach((key, value) {
           final p = Map<String, dynamic>.from(value as Map);
           p['key'] = key;
           loaded.add(p);
+
+          final reportsRaw = p['reports'];
+          final reportCount = (p['reportCount'] as num?)?.toInt() ??
+              (reportsRaw is Map ? reportsRaw.length : 0);
+
+          if (reportCount > 0) {
+            postReportCount += reportCount;
+            p['reportCount'] = reportCount;
+            reported.add(p);
+          }
         });
 
         // Sort newest first
         loaded.sort((a, b) => 
           (b['timestamp'] ?? '').toString().compareTo((a['timestamp'] ?? '').toString()));
+        reported.sort((a, b) =>
+          ((b['reportCount'] as num?)?.toInt() ?? 0)
+              .compareTo(((a['reportCount'] as num?)?.toInt() ?? 0)));
 
         setState(() {
           _totalPosts = loaded.length;
+          _totalPostReports = postReportCount;
           _recentPosts = loaded.take(5).toList();
+          _reportedPosts = reported;
           _isLoading = false;
         });
       } else {
-        if (mounted) setState(() { _totalPosts = 0; _recentPosts = []; _isLoading = false; });
+        if (mounted) setState(() { _totalPosts = 0; _totalPostReports = 0; _recentPosts = []; _reportedPosts = []; _isLoading = false; });
       }
+    });
+
+    _blockClaimsRef.onValue.listen((event) {
+      if (!mounted) return;
+
+      if (event.snapshot.value == null) {
+        setState(() {
+          _totalBlockClaims = 0;
+          _blockClaims = [];
+        });
+        return;
+      }
+
+      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+      final List<Map<String, dynamic>> loadedClaims = [];
+
+      data.forEach((uid, claimsForUser) {
+        if (claimsForUser is Map) {
+          final claimsMap = Map<String, dynamic>.from(claimsForUser);
+          claimsMap.forEach((claimId, claimData) {
+            if (claimData is Map) {
+              final claim = Map<String, dynamic>.from(claimData);
+              claim['uid'] = claim['uid'] ?? uid;
+              claim['claimId'] = claimId;
+              loadedClaims.add(claim);
+            }
+          });
+        }
+      });
+
+      loadedClaims.sort((a, b) =>
+          (b['timestamp'] ?? '').toString().compareTo((a['timestamp'] ?? '').toString()));
+
+      setState(() {
+        _blockClaims = loadedClaims;
+        _totalBlockClaims = loadedClaims.length;
+      });
     });
   }
 
@@ -338,6 +398,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // ── Body ──────────────────────────────────────────────────────────────
 
   Widget _buildBody() {
+    if (_selectedNav == 2 || _selectedNav == 4) {
+      return _buildReportedPostsPage();
+    }
+    if (_selectedNav == 1) {
+      return _buildBlockClaimsPage();
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -350,6 +417,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           _buildChartsRow(),
           const SizedBox(height: 16),
           _buildFounderCard(),
+          const SizedBox(height: 16),
+          _buildReportedPostsPanel(),
+          const SizedBox(height: 16),
+          _buildBlockClaimsPanel(),
           const SizedBox(height: 16),
           _buildBottomRow(),
           const SizedBox(height: 32),
@@ -382,6 +453,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const Color(0xFF2ECC71), const Color(0xFFE6FAF0)),
       _StatCard('Pending Reports', '$_totalPosts', Icons.cancel_rounded,
           AppColors.primary, AppColors.communityBg),
+      _StatCard('Post Reports', '$_totalPostReports', Icons.flag_rounded,
+          const Color(0xFFE8614A), const Color(0xFFFFF0EE)),
+      _StatCard('Block Claims', '$_totalBlockClaims', Icons.gavel_rounded,
+          const Color(0xFF8E44AD), const Color(0xFFF5EEFF)),
     ];
 
     return LayoutBuilder(builder: (context, constraints) {
@@ -790,6 +865,360 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       );
     });
+  }
+
+  Widget _buildBlockClaimsPage() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'User Management',
+            style: GoogleFonts.inter(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF1B2A4A),
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Blocked-account claims submitted by users.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textMedium,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildBlockClaimsPanel(showAll: true),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockClaimsPanel({bool showAll = false}) {
+    if (_blockClaims.isEmpty) {
+      return _buildSectionCard(
+        title: 'Block Claims',
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              'No blocked-account claims yet.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textLight,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final claims = showAll ? _blockClaims : _blockClaims.take(3).toList();
+
+    return _buildSectionCard(
+      title: 'Block Claims ($_totalBlockClaims)',
+      child: Column(
+        children: claims
+            .map(
+              (claim) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildBlockClaimCard(claim),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildBlockClaimCard(Map<String, dynamic> claim) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFCFAFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF8E44AD).withOpacity(0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF5EEFF),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.gavel_rounded,
+                  color: Color(0xFF8E44AD),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      claim['name'] ?? 'User',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    Text(
+                      claim['email'] ?? claim['uid'] ?? '',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _statusChip(claim['status'] ?? 'pending', const Color(0xFF8E44AD)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            claim['message'] ?? 'No claim message',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textMedium,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _formatAdminTime(claim['timestamp'] ?? ''),
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              color: AppColors.textLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatAdminTime(Object timestamp) {
+    try {
+      final dt = DateTime.parse(timestamp.toString());
+      return '${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return timestamp.toString();
+    }
+  }
+
+  Widget _buildReportedPostsPage() {
+    final title = _selectedNav == 4 ? 'Content Moderation' : 'Reported Posts';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.inter(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF1B2A4A),
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'User-submitted post reports from the app.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textMedium,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _buildReportedPostsPanel(showAll: true),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReportedPostsPanel({bool showAll = false}) {
+    if (_reportedPosts.isEmpty) {
+      return _buildSectionCard(
+        title: 'Reported Posts',
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            child: Text(
+              'No post reports yet.',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textLight,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final posts = showAll ? _reportedPosts : _reportedPosts.take(3).toList();
+
+    return _buildSectionCard(
+      title: 'Reported Posts ($_totalPostReports)',
+      child: Column(
+        children: posts
+            .map(
+              (post) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildReportedPostCard(post),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildReportedPostCard(Map<String, dynamic> post) {
+    final reports = post['reports'] is Map
+        ? Map<String, dynamic>.from(post['reports'] as Map)
+        : <String, dynamic>{};
+    final reportCount = (post['reportCount'] as num?)?.toInt() ?? reports.length;
+    final latestReasons = reports.values
+        .whereType<Map>()
+        .map((report) => (report['reason'] ?? 'Reported').toString())
+        .where((reason) => reason.trim().isNotEmpty)
+        .toSet()
+        .take(3)
+        .toList();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBFA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFF0EE),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.flag_rounded,
+                  color: AppColors.primary,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  post['description'] ?? 'No post text',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _statusChip('$reportCount reports', AppColors.primary),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _miniInfo(Icons.person_outline_rounded, post['name'] ?? 'User'),
+              _miniInfo(Icons.category_outlined, post['category'] ?? 'General'),
+              _miniInfo(Icons.location_on_outlined, post['location'] ?? 'Unknown'),
+            ],
+          ),
+          if (latestReasons.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: latestReasons
+                  .map((reason) => _reasonChip(reason))
+                  .toList(),
+            ),
+          ],
+          if (reports.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...reports.entries.take(3).map((entry) {
+              final report = entry.value is Map
+                  ? Map<String, dynamic>.from(entry.value as Map)
+                  : <String, dynamic>{};
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '${report['reporterName'] ?? report['uid'] ?? entry.key}: ${report['reason'] ?? 'Reported'}',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textMedium,
+                    height: 1.4,
+                  ),
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _miniInfo(IconData icon, Object value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: AppColors.textLight),
+        const SizedBox(width: 4),
+        Text(
+          value.toString(),
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            color: AppColors.textMedium,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reasonChip(String reason) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF0EE),
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Text(
+        reason,
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
+        ),
+      ),
+    );
   }
 
   Widget _buildRecentReports() {

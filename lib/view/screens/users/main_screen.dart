@@ -1,10 +1,11 @@
-
 import 'package:cityvoice/view/screens/users/profile/profile_screen.dart';
 import 'package:cityvoice/view/screens/users/raise_voice/raise_voice_page.dart';
 import 'package:cityvoice/view/screens/users/voices/voices_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import 'maps/map_screen.dart';
 import 'notification/alerts_screen.dart';
@@ -19,12 +20,15 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    const VoicesScreen(),
-    const MapScreen(),  // Map   — we'll build next
-    const AlertsScreen(),  // Alerts
-    const ProfileScreen(),  // Profile
-  ];
+  final DatabaseReference _usersRef =
+      FirebaseDatabase.instance.ref().child('users');
+
+  List<Widget> _screens(bool isBlocked) => [
+        VoicesScreen(readOnly: isBlocked),
+        MapScreen(readOnly: isBlocked),
+        const AlertsScreen(),
+        ProfileScreen(readOnly: isBlocked),
+      ];
 
   @override
   void initState() {
@@ -33,15 +37,10 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _requestLocationPermission() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
+    var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
@@ -49,16 +48,64 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: _screens[_currentIndex],
-      floatingActionButton: _buildFAB(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: _buildBottomBar(),
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid == null) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      );
+    }
+
+    return StreamBuilder<DatabaseEvent>(
+      stream: _usersRef.child(uid).onValue,
+      builder: (context, snapshot) {
+        final userData = snapshot.data?.snapshot.value is Map
+            ? Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map)
+            : <String, dynamic>{};
+        final isBlocked =
+            userData['isBlocked'] == true || userData['blocked'] == true;
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          body: _screens(isBlocked)[_currentIndex],
+          floatingActionButton: _buildFAB(isBlocked),
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerDocked,
+          bottomNavigationBar: _buildBottomBar(),
+        );
+      },
     );
   }
 
-  Widget _buildFAB() {
+  Widget _buildBlockedBanner() {
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+        color: const Color(0xFFFFF0EE),
+        child: Row(
+          children: [
+            const Icon(Icons.block_rounded, color: AppColors.primary, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Your account is blocked. You can only view posts.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFAB(bool isBlocked) {
     return Container(
       width: 58,
       height: 58,
@@ -83,6 +130,15 @@ class _MainScreenState extends State<MainScreen> {
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: () {
+            if (isBlocked) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Your account is blocked. You can only view posts.'),
+                ),
+              );
+              return;
+            }
+
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -115,10 +171,19 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Voices'),
               _buildNavItem(1, Icons.map_rounded, Icons.map_outlined, 'Map'),
-              // FAB space
               const Expanded(child: SizedBox()),
-              _buildNavItem(2, Icons.notifications_rounded, Icons.notifications_outlined, 'Alerts'),
-              _buildNavItem(3, Icons.person_rounded, Icons.person_outlined, 'Profile'),
+              _buildNavItem(
+                2,
+                Icons.notifications_rounded,
+                Icons.notifications_outlined,
+                'Alerts',
+              ),
+              _buildNavItem(
+                3,
+                Icons.person_rounded,
+                Icons.person_outlined,
+                'Profile',
+              ),
             ],
           ),
         ),
@@ -126,7 +191,12 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData activeIcon, IconData inactiveIcon, String label) {
+  Widget _buildNavItem(
+    int index,
+    IconData activeIcon,
+    IconData inactiveIcon,
+    String label,
+  ) {
     final isActive = _currentIndex == index;
     return Expanded(
       child: GestureDetector(
