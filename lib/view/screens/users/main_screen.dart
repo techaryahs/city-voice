@@ -67,9 +67,11 @@ class _MainScreenState extends State<MainScreen> {
             userData['isBlocked'] == true || userData['blocked'] == true;
 
         return Scaffold(
+          resizeToAvoidBottomInset: false,
           backgroundColor: AppColors.background,
           body: _screens(isBlocked)[_currentIndex],
           floatingActionButton: _buildFAB(isBlocked),
+          floatingActionButtonAnimator: FloatingActionButtonAnimator.noAnimation,
           floatingActionButtonLocation:
               FloatingActionButtonLocation.centerDocked,
           bottomNavigationBar: _buildBottomBar(),
@@ -84,7 +86,7 @@ class _MainScreenState extends State<MainScreen> {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-        color: const Color(0xFFFFF0EE),
+        color: const Color(0xFFEAF3FF),
         child: Row(
           children: [
             const Icon(Icons.block_rounded, color: AppColors.primary, size: 22),
@@ -107,48 +109,48 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildFAB(bool isBlocked) {
     return Container(
-      width: 58,
-      height: 58,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF4364F7), AppColors.primary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.45),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+        width: 60,
+        height: 60,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () {
-            if (isBlocked) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Your account is blocked. You can only view posts.'),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0D6EFD).withOpacity(0.38),
+              blurRadius: 20,
+              offset: const Offset(0, 7),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () {
+              if (isBlocked) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Your account is blocked. You can only view posts.'),
+                  ),
+                );
+                return;
+              }
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RaiseVoicePage(),
                 ),
               );
-              return;
-            }
-
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const RaiseVoicePage(),
-              ),
-            );
-          },
-          child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+            },
+            child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+          ),
         ),
-      ),
     );
   }
 
@@ -207,7 +209,7 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             Icon(
               isActive ? activeIcon : inactiveIcon,
-              color: isActive ? AppColors.primary : AppColors.textLight,
+              color: isActive ? const Color(0xFF0052D4) : const Color(0xFF8EA3B8),
               size: 24,
             ),
             const SizedBox(height: 4),
@@ -216,7 +218,7 @@ class _MainScreenState extends State<MainScreen> {
               style: GoogleFonts.inter(
                 fontSize: 11,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                color: isActive ? AppColors.primary : AppColors.textLight,
+                color: isActive ? const Color(0xFF0052D4) : const Color(0xFF8EA3B8),
               ),
             ),
           ],

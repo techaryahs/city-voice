@@ -38,8 +38,8 @@ class VoicePost {
     final data = Map<String, dynamic>.from(snapshot.value as Map);
     return VoicePost(
       key: snapshot.key ?? '',
-      uid: data['uid'] ?? '',
-      name: data['name'] ?? 'User',
+      uid: _firstText(data, ['uid', 'userId', 'ownerUid', 'postOwnerUid']),
+      name: _firstText(data, ['name', 'userName', 'ownerName'], fallback: 'User'),
       description: data['description'] ?? '',
       location: data['location'] ?? '',
       latitude: (data['latitude'] as num?)?.toDouble(),
@@ -59,8 +59,8 @@ class VoicePost {
   factory VoicePost.fromMap(String key, Map<String, dynamic> data) {
     return VoicePost(
       key: key,
-      uid: data['uid'] ?? '',
-      name: data['name'] ?? 'User',
+      uid: _firstText(data, ['uid', 'userId', 'ownerUid', 'postOwnerUid']),
+      name: _firstText(data, ['name', 'userName', 'ownerName'], fallback: 'User'),
       description: data['description'] ?? '',
       location: data['location'] ?? '',
       latitude: (data['latitude'] as num?)?.toDouble(),
@@ -75,6 +75,21 @@ class VoicePost {
           ? Map<String, dynamic>.from(data['supportedBy'])
           : {},
     );
+  }
+
+  // Reads the first non-empty text value from possible legacy field names.
+  static String _firstText(
+    Map<String, dynamic> data,
+    List<String> keys, {
+    String fallback = '',
+  }) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return fallback;
   }
 }
 

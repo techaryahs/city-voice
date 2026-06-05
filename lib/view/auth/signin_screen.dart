@@ -22,6 +22,8 @@ class _SignInScreenState extends State<SignInScreen> {
 
   bool _obscurePassword = true;
   bool _isLoading = false;
+  String _selectedLanguage = 'English';
+  final List<String> _languages = ['English', 'मराठी', 'हिन्दी'];
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -32,14 +34,15 @@ class _SignInScreenState extends State<SignInScreen> {
   void _loginUser() async {
     String email = _emailController.text.trim();
     String password = _passwordController.text.trim();
+    final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
 
     if (email.isEmpty || password.isEmpty) {
       _showSnack("Enter email and password");
       return;
     }
 
-    if (!email.contains("@")) {
-      _showSnack("Enter valid email");
+    if (!emailRegex.hasMatch(email)) {
+      _showSnack("Enter a valid email address");
       return;
     }
 
@@ -56,6 +59,10 @@ class _SignInScreenState extends State<SignInScreen> {
 
       // ✅ OPTIONAL: Fetch user data
       final snapshot = await _dbRef.child(uid).get();
+      final userData = snapshot.value is Map
+          ? Map<String, dynamic>.from(snapshot.value as Map)
+          : <String, dynamic>{};
+      final isEmailVerified = userData['emailVerified'] == true;
 
       if (!snapshot.exists) {
         _showSnack("User data not found");
@@ -69,6 +76,12 @@ class _SignInScreenState extends State<SignInScreen> {
           MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
         );
       } else {
+        if (!isEmailVerified) {
+          await _auth.signOut();
+          _showSnack("Please verify your email before signing in");
+          return;
+        }
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -283,7 +296,7 @@ class _SignInScreenState extends State<SignInScreen> {
                 width: 42, // 🔥 increased size
                 height: 42,
                 child: Image.asset(
-                  'assets/images/Icon.png',
+                  'assets/images/logo.jpeg',
                   fit: BoxFit.contain,
                 ),
               ),
@@ -304,30 +317,59 @@ class _SignInScreenState extends State<SignInScreen> {
 
   Widget _buildLanguageChip() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        border: Border.all(color: const Color(0xFFD7E9FF)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
+            color: const Color(0xFF0D6EFD).withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          )
         ],
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.language_rounded, size: 15, color: AppColors.textMedium),
-          const SizedBox(width: 5),
-          Text('English',
-              style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textDark)),
-          const SizedBox(width: 3),
-          Icon(Icons.keyboard_arrow_down_rounded,
-              size: 16, color: AppColors.textMedium),
+          const Icon(
+            Icons.language_rounded,
+            size: 16,
+            color: Color(0xFF0052D4),
+          ),
+          const SizedBox(width: 6),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedLanguage,
+              borderRadius: BorderRadius.circular(14),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: Color(0xFF0052D4),
+              ),
+              items: _languages
+                  .map(
+                    (language) => DropdownMenuItem<String>(
+                      value: language,
+                      child: Text(
+                        language,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _selectedLanguage = value);
+                }
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -465,7 +507,7 @@ class _SignInScreenState extends State<SignInScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(100),
         gradient: const LinearGradient(
-          colors: [Color(0xFFFF7B5F), AppColors.primary],
+          colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),

@@ -27,12 +27,44 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
   
   bool _isSubmitting = false;
+  Set<String> _blockedUserIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToBlockedUsers();
+  }
 
   @override
   void dispose() {
     _commentController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _listenToBlockedUsers() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    _dbRef
+        .child('users')
+        .child(user.uid)
+        .child('blockedUsers')
+        .onValue
+        .listen((event) {
+      final blocked = <String>{};
+      if (event.snapshot.value is Map) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        for (final entry in data.entries) {
+          if (entry.value == true || entry.value is Map) {
+            blocked.add(entry.key);
+          }
+        }
+      }
+      if (mounted) {
+        setState(() => _blockedUserIds = blocked);
+      }
+    });
   }
 
   Future<void> _submitReply() async {
@@ -174,9 +206,88 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         return Transaction.success(postMap);
       });
 
-      _showSnack('Post reported. Thank you for helping keep CityVoice safe.');
+      _showSnack('Post reported and added to your profile.');
     } catch (e) {
       _showSnack('Failed to report post: $e');
+    }
+  }
+
+  Future<void> _toggleBlockPostOwner() async {
+    if (widget.readOnly) {
+      _showBlockedNotice();
+      return;
+    }
+
+    final user = _auth.currentUser;
+    if (user == null ||
+        widget.post.uid.isEmpty ||
+        widget.post.uid == user.uid) {
+      return;
+    }
+
+    final bool isBlocked = _blockedUserIds.contains(widget.post.uid);
+    final String action = isBlocked ? 'Unblock' : 'Block';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          '$action ${widget.post.name}',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          isBlocked
+              ? 'You will start seeing updates from this user again.'
+              : 'You will stop seeing posts and responses from this user.',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            color: AppColors.textMedium,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final ref = _dbRef
+        .child('users')
+        .child(user.uid)
+        .child('blockedUsers')
+        .child(widget.post.uid);
+    final mirrorRef =
+        _dbRef.child('userBlocks').child(user.uid).child(widget.post.uid);
+
+    try {
+      if (isBlocked) {
+        await ref.remove();
+        try {
+          await mirrorRef.remove();
+        } catch (_) {}
+        _showSnack('${widget.post.name} unblocked.');
+      } else {
+        final blockData = {
+          'uid': widget.post.uid,
+          'name': widget.post.name,
+          'blockedAt': DateTime.now().toIso8601String(),
+        };
+        await ref.set(blockData);
+        try {
+          await mirrorRef.set(blockData);
+        } catch (_) {}
+        _showSnack('${widget.post.name} blocked.');
+      }
+    } catch (e) {
+      _showSnack('Could not update blocked users: $e');
     }
   }
 
@@ -305,7 +416,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     }
 
                     final rawData = Map<String, dynamic>.from(snapshot.data!.snapshot.value as Map);
-                    final List<PostReply> replies = rawData.entries.map((e) => PostReply.fromMap(e.key, Map<String, dynamic>.from(e.value as Map))).toList();
+                    final List<PostReply> replies = rawData.entries
+                        .map((e) => PostReply.fromMap(
+                              e.key,
+                              Map<String, dynamic>.from(e.value as Map),
+                            ))
+                        .where((reply) =>
+                            reply.uid == _auth.currentUser?.uid ||
+                            !_blockedUserIds.contains(reply.uid))
+                        .toList();
                     
                     // Sort locally since Firebase ordering can be tricky with keys
                     replies.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -476,40 +595,88 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: _reportPost,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF0EE),
-                    borderRadius: BorderRadius.circular(100),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.18),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.flag_outlined,
-                        color: AppColors.primary,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        'Report',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.post.uid.isNotEmpty &&
+                      widget.post.uid != _auth.currentUser?.uid) ...[
+                    GestureDetector(
+                      onTap: _toggleBlockPostOwner,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEAF3FF),
+                          borderRadius: BorderRadius.circular(100),
+                          border: Border.all(
+                            color: const Color(0xFF1A73E8).withOpacity(0.18),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _blockedUserIds.contains(widget.post.uid)
+                                  ? Icons.person_add_alt_1_outlined
+                                  : Icons.person_off_outlined,
+                              color: const Color(0xFF0052D4),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              _blockedUserIds.contains(widget.post.uid)
+                                  ? 'Unblock'
+                                  : 'Block',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0052D4),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  GestureDetector(
+                    onTap: _reportPost,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF3FF),
+                        borderRadius: BorderRadius.circular(100),
+                        border: Border.all(
+                          color: const Color(0xFF1A73E8).withOpacity(0.18),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.flag_outlined,
+                            color: Color(0xFF0052D4),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Report',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0052D4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),

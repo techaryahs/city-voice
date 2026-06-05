@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:mailer/mailer.dart' hide Location;
 import 'package:mailer/smtp_server.dart';
@@ -25,36 +27,36 @@ const _categories = [
   _Category(
     'Roads',
     Icons.construction_rounded,
-    Color(0xFFE8614A),
-    Color(0xFFFFF0EE),
+    Color(0xFF0052D4),
+    Color(0xFFEAF3FF),
   ),
 
   _Category(
     'Footpath',
     Icons.directions_walk_rounded,
-    Color(0xFF8E44AD),
-    Color(0xFFF5EEFF),
+    Color(0xFF1A73E8),
+    Color(0xFFD7E9FF),
   ),
 
   _Category(
     'Public Toilets',
     Icons.wc_rounded,
-    Color(0xFF16A085),
-    Color(0xFFEEFFFB),
+    Color(0xFF3F8CFF),
+    Color(0xFFEAF3FF),
   ),
 
   _Category(
     'Garbage',
     Icons.delete_outline_rounded,
-    Color(0xFF2ECC71),
-    Color(0xFFEEFBF4),
+    Color(0xFF0052D4),
+    Color(0xFFEAF3FF),
   ),
 
   _Category(
     'Garden & Trees',
     Icons.park_rounded,
-    Color(0xFF27AE60),
-    Color(0xFFEFFAF1),
+    Color(0xFF1A73E8),
+    Color(0xFFD7E9FF),
   ),
 
   _Category(
@@ -67,8 +69,8 @@ const _categories = [
   _Category(
     'Street Lights',
     Icons.lightbulb_outline_rounded,
-    Color(0xFFF39C12),
-    Color(0xFFFFFAEE),
+    Color(0xFF3F8CFF),
+    Color(0xFFEAF3FF),
   ),
 
   _Category(
@@ -78,6 +80,25 @@ const _categories = [
     Color(0xFFF4F4F4),
   ),
 ];
+
+const _predictionApiUrl = 'https://city-voice.onrender.com/predict';
+
+class _CivicIssuePrediction {
+  final bool isCivicIssue;
+  final String label;
+  final double? confidence;
+  final String? description;
+  final Map<String, dynamic> rawResponse;
+
+  const _CivicIssuePrediction({
+    required this.isCivicIssue,
+    required this.label,
+    required this.confidence,
+    required this.description,
+    required this.rawResponse,
+  });
+}
+
 
 // ── Main widget ───────────────────────────────────────────────────────────────
 
@@ -93,8 +114,11 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
   final _locationController = TextEditingController();
 
   File?   _image;
+  _CivicIssuePrediction? _prediction;
+  String? _predictionError;
   int     _selectedCategory = 0;
   bool    _isLoading        = false;
+  bool    _isPredictingImage = false;
   bool    _isFetchingLocation = false;
   
   double? _exactLat;
@@ -171,7 +195,340 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
       imageQuality: 75,
       maxWidth: 1200,
     );
-    if (picked != null) setState(() => _image = File(picked.path));
+    if (picked != null) {
+      setState(() {
+        _image = File(picked.path);
+        _prediction = null;
+        _predictionError = null;
+      });
+      await _verifySelectedImage();
+    }
+  }
+
+  Future<_CivicIssuePrediction> _predictCivicIssue(File image) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse(_predictionApiUrl),
+    );
+
+    request.files.add(await http.MultipartFile.fromPath('file', image.path));
+
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 45),
+    );
+    final response = await http.Response.fromStream(streamedResponse);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Image verification failed (${response.statusCode})');
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) {
+      throw Exception('Image verification returned an invalid response');
+    }
+
+    final data = Map<String, dynamic>.from(decoded);
+    final isCivicIssue = _readCivicIssueFlag(data);
+    if (isCivicIssue == null) {
+      throw Exception('Image verification returned an unexpected response');
+    }
+
+    return _CivicIssuePrediction(
+      isCivicIssue: isCivicIssue,
+      label: _readPredictionLabel(data),
+      confidence: _readPredictionConfidence(data),
+      description: _readPredictionDescription(data),
+      rawResponse: data,
+    );
+  }
+
+  bool? _readCivicIssueFlag(Map<String, dynamic> data) {
+    const keys = [
+      'is_civic_issue',
+      'contains_civic_issue',
+      'civic_issue',
+      'is_civic',
+      'is_issue',
+      'valid',
+      'result',
+      'prediction',
+      'label',
+      'class',
+      'category',
+    ];
+
+    for (final key in keys) {
+      if (data.containsKey(key)) {
+        final value = _parseCivicIssueValue(data[key]);
+        if (value != null) return value;
+      }
+    }
+
+    for (final value in data.values) {
+      final parsed = _parseCivicIssueValue(value, parseNumbers: false);
+      if (parsed != null) return parsed;
+    }
+
+    return null;
+  }
+
+  bool? _parseCivicIssueValue(dynamic value, {bool parseNumbers = true}) {
+    if (value is bool) return value;
+    if (value is num && parseNumbers) return value > 0;
+    if (value is Map) {
+      return _readCivicIssueFlag(Map<String, dynamic>.from(value));
+    }
+
+    final text = value?.toString().toLowerCase().trim();
+    if (text == null || text.isEmpty) return null;
+
+    const negativeSignals = [
+      'not civic',
+      'non civic',
+      'non-civic',
+      'non_civic',
+      'no civic',
+      'no_civic',
+      'not an issue',
+      'no issue',
+      'no_issue',
+      'irrelevant',
+      'normal',
+      'plain road',
+      'plain_road',
+      'clean road',
+      'clean_road',
+      'clean dustbin',
+      'clean_dustbin',
+      'working streetlight',
+      'working_streetlight',
+      'working street light',
+      'working_street_light',
+      'false',
+      '0',
+    ];
+    if (negativeSignals.any(text.contains)) return false;
+
+    const positiveSignals = [
+      'civic issue',
+      'civic',
+      'issue',
+      'pothole',
+      'garbage',
+      'water',
+      'waterlogging',
+      'water logging',
+      'street light',
+      'streetlight',
+      'road',
+      'crack',
+      'damaged',
+      'damage',
+      'manhole',
+      'tree',
+      'footpath',
+      'toilet',
+      'drainage',
+      'true',
+      '1',
+    ];
+    if (positiveSignals.any(text.contains)) return true;
+
+    return null;
+  }
+
+  String _readPredictionLabel(Map<String, dynamic> data) {
+    for (final key in ['label', 'prediction', 'class', 'category', 'result']) {
+      final value = data[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString();
+      }
+    }
+    return 'unknown';
+  }
+
+  double? _readPredictionConfidence(Map<String, dynamic> data) {
+    for (final key in ['confidence', 'score', 'probability']) {
+      final value = data[key];
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value);
+    }
+    return null;
+  }
+
+  String? _readPredictionDescription(Map<String, dynamic> data) {
+    for (final key in ['description', 'message', 'details']) {
+      final value = data[key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString();
+      }
+    }
+    return null;
+  }
+
+  String _formatPredictionLabel(String label) {
+    return label
+        .replaceAll('_', ' ')
+        .split(' ')
+        .where((word) => word.isNotEmpty)
+        .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+        .join(' ');
+  }
+
+  String _formatConfidence(double confidence) {
+    final normalized = confidence <= 1 ? confidence * 100 : confidence;
+    return '${normalized.toStringAsFixed(1)}%';
+  }
+
+  void _applyAiPredictionToForm(_CivicIssuePrediction prediction) {
+    if (!prediction.isCivicIssue) return;
+
+    final categoryIndex = _categoryIndexForPrediction(prediction);
+    if (categoryIndex != null) {
+      _selectedCategory = categoryIndex;
+    }
+
+    final description = prediction.description?.trim();
+    if (description != null && description.isNotEmpty) {
+      _descController.text = description;
+    }
+  }
+
+  int? _categoryIndexForPrediction(_CivicIssuePrediction prediction) {
+    if (!prediction.isCivicIssue) return null;
+
+    final text = _predictionSearchText(prediction);
+
+    if (_hasAny(text, [
+      'streetlight',
+      'street light',
+      'light pole',
+      'damaged light',
+      'broken light',
+      'not working light',
+      'faulty light',
+    ])) {
+      return _indexOfCategory('Street Lights');
+    }
+
+    if (_hasAny(text, [
+      'fallen tree',
+      'fallen_tree',
+      'tree fallen',
+      'tree branch',
+      'fallen branch',
+      'tree',
+      'garden',
+    ])) {
+      return _indexOfCategory('Garden & Trees');
+    }
+
+    if (_hasAny(text, [
+      'waterlogging',
+      'water logging',
+      'water_logged',
+      'waterlogged',
+      'flood',
+      'leakage',
+      'water',
+    ])) {
+      return _indexOfCategory('Water');
+    }
+
+    if (_hasAny(text, [
+      'footpath',
+      'sidewalk',
+      'pavement',
+    ])) {
+      return _indexOfCategory('Footpath');
+    }
+
+    if (_hasAny(text, [
+      'public toilet',
+      'public_toilet',
+      'toilet',
+      'wc',
+    ])) {
+      return _indexOfCategory('Public Toilets');
+    }
+
+    if (_hasAny(text, ['garbage'])) {
+      return _indexOfCategory('Garbage');
+    }
+
+    if (_hasAny(text, [
+      'pothole',
+      'crack road',
+      'road crack',
+      'cracked road',
+      'damage road',
+      'damaged road',
+      'road damage',
+      'road damaged',
+      'open manhole',
+      'open_manhole',
+      'manhole',
+      'road',
+    ])) {
+      return _indexOfCategory('Roads');
+    }
+
+    return _indexOfCategory('Other');
+  }
+
+  String _predictionSearchText(_CivicIssuePrediction prediction) {
+    return [
+      prediction.label,
+      prediction.description,
+      prediction.rawResponse['prediction'],
+      prediction.rawResponse['class'],
+      prediction.rawResponse['category'],
+    ]
+        .whereType<Object>()
+        .map((value) => value.toString().toLowerCase().replaceAll('_', ' '))
+        .join(' ');
+  }
+
+  bool _hasAny(String text, List<String> keywords) {
+    return keywords.any((keyword) => text.contains(keyword));
+  }
+
+  int? _indexOfCategory(String label) {
+    final index = _categories.indexWhere((category) => category.label == label);
+    return index == -1 ? null : index;
+  }
+
+  Future<void> _verifySelectedImage() async {
+    final image = _image;
+    if (image == null) return;
+
+    setState(() {
+      _isPredictingImage = true;
+      _prediction = null;
+      _predictionError = null;
+    });
+
+    try {
+      final prediction = await _predictCivicIssue(image);
+      if (!mounted) return;
+      setState(() {
+        _prediction = prediction;
+        _applyAiPredictionToForm(prediction);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _predictionError = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isPredictingImage = false);
+    }
+  }
+
+  Future<Location> _resolveLocationCoordinates(String location) async {
+    final matches = await locationFromAddress(location);
+    if (matches.isEmpty) {
+      throw Exception('Could not find coordinates for this location');
+    }
+    return matches.first;
   }
 
   void _showImageOptions() {
@@ -211,7 +568,7 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
                 _sheetOption(
                   icon: Icons.delete_outline_rounded,
                   label: 'Remove photo',
-                  color: Colors.redAccent,
+                  color: const Color(0xFF0052D4),
                   onTap: () { Navigator.pop(context); setState(() => _image = null); },
                 ),
               const SizedBox(height: 16),
@@ -252,9 +609,9 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
   // ── Upload & save post ──────────────────────────────────────────────────────
 
   Future<void> _sendEmailNotification(String posterName, String category, String location, String desc) async {
-    const String username = 'iec.aryahs@gmail.com';
+    const String username = 'cityvoiceofficial@gmail.com';
     // Use the 16-character app password (stripped trailing dot if any)
-    const String password = 'mytocsnukxtqtcdn';
+    const String password = 'nzrdrnffjaojwpxg';
 
     final smtpServer = gmail(username, password);
 
@@ -284,11 +641,34 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
       return;
     }
 
+    if (_image == null) {
+      _showSnack('Please add a photo so we can verify the issue');
+      return;
+    }
+    if (_isPredictingImage) {
+      _showSnack('Please wait while we verify the photo');
+      return;
+    }
+    if (_predictionError != null) {
+      _showSnack(_predictionError!);
+      return;
+    }
+    if (_prediction != null && !_prediction!.isCivicIssue) {
+      _showSnack('This photo does not look like a civic issue');
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
       final user = _auth.currentUser;
       if (user == null) throw Exception('Not logged in');
+
+      final prediction = _prediction ?? await _predictCivicIssue(_image!);
+      if (!prediction.isCivicIssue) {
+        _showSnack('This photo does not look like a civic issue');
+        return;
+      }
 
       // ── 1. Fetch poster's name from DB ───────────────────────────────────
       String posterName = 'Anonymous';
@@ -323,7 +703,10 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
       double? lat = _exactLat;
       double? lng = _exactLng;
       if (lat == null || lng == null) {
-        throw Exception("Unable to fetch precise GPS location");
+        final resolvedLocation = await _resolveLocationCoordinates(location);
+        lat = resolvedLocation.latitude;
+        lng = resolvedLocation.longitude;
+        //throw Exception("Unable to fetch precise GPS location");
       }
 
       // ── 3. Save post to Realtime Database ────────────────────────────────
@@ -337,6 +720,8 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
         'longitude':   lng,
         'category':    _categories[_selectedCategory].label,
         'image_url':   imageUrl ?? '',
+        'ai_prediction': prediction.label,
+        'ai_prediction_response': prediction.rawResponse,
         'timestamp':   DateTime.now().toIso8601String(),
         'supports':    0,
         'replies':     0,
@@ -381,7 +766,7 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
-                  colors: [Color(0xFFFF7B5F), AppColors.primary],
+                  colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -415,7 +800,7 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(100),
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFFF7B5F), AppColors.primary],
+                    colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                   ),
@@ -481,7 +866,7 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
                       'Please post only relevant civic or community issues. Unnecessary or fake voices are not allowed.',
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        color: Colors.redAccent,
+                        color: const Color(0xFF0052D4),
                         height: 1.5,
                         fontWeight: FontWeight.w500,
                       ),
@@ -494,6 +879,10 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
                     _buildSectionLabel('Add a photo'),
                     const SizedBox(height: 10),
                     _buildImagePicker(),
+                    if (_image != null) ...[
+                      const SizedBox(height: 12),
+                      _buildPredictionPanel(),
+                    ],
                     const SizedBox(height: 24),
                     _buildSectionLabel('Location'),
                     const SizedBox(height: 10),
@@ -755,6 +1144,139 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
 
   // ── Location field ───────────────────────────────────────────────────────────
 
+    Widget _buildPredictionPanel() {
+    final prediction = _prediction;
+    final isRejected = prediction != null && !prediction.isCivicIssue;
+    final accent = isRejected ? Colors.redAccent : AppColors.primary;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withOpacity(0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: _isPredictingImage
+          ? Row(
+              children: [
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Checking photo...',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMedium,
+                  ),
+                ),
+              ],
+            )
+          : _predictionError != null
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _predictionError!,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.redAccent,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : prediction == null
+                  ? const SizedBox.shrink()
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              isRejected
+                                  ? Icons.warning_amber_rounded
+                                  : Icons.verified_rounded,
+                              color: accent,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'AI Check',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _predictionRow(
+                          'Prediction',
+                          _formatPredictionLabel(prediction.label),
+                        ),
+                        if (prediction.confidence != null)
+                          _predictionRow(
+                            'Confidence',
+                            _formatConfidence(prediction.confidence!),
+                          ),
+                        if (prediction.description != null)
+                          _predictionRow('Description', prediction.description!),
+                      ],
+                    ),
+    );
+  }
+
+  Widget _predictionRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 86,
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textLight,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLocationField() {
     return Container(
       decoration: BoxDecoration(
@@ -797,7 +1319,7 @@ class _RaiseVoicePageState extends State<RaiseVoicePage> {
           gradient: _isLoading
               ? const LinearGradient(colors: [Color(0xFFCCCCCC), Color(0xFFBBBBBB)])
               : const LinearGradient(
-                  colors: [Color(0xFFFF7B5F), AppColors.primary],
+                  colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                 ),

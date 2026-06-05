@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
@@ -16,8 +17,13 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   final DatabaseReference _postsRef =
       FirebaseDatabase.instance.ref('posts');
+  final DatabaseReference _notificationsRef =
+      FirebaseDatabase.instance.ref('notifications');
+  final DatabaseReference _usersRef =
+      FirebaseDatabase.instance.ref('users');
 
   List<_AlertItem> _alerts = [];
+  Set<String> _blockedUserIds = {};
 
   bool _isLoading = true;
 
@@ -81,47 +87,67 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   Future<void> _loadNearbyAlerts() async {
     try {
-      await _detectCurrentArea();
-
-      final snapshot = await _postsRef.get();
-
-      List<_AlertItem> loadedAlerts = [];
-
-      if (snapshot.exists) {
-        final raw =
-            Map<String, dynamic>.from(snapshot.value as Map);
-
-        raw.forEach((key, value) {
-          final post =
-              Map<String, dynamic>.from(value);
-
-          final String location =
-              (post['location'] ?? '')
-                  .toString()
-                  .toLowerCase();
-
-          final String category =
-              (post['category'] ?? 'Issue')
-                  .toString();
-
-          final String area =
-              _currentArea.toLowerCase();
-
-          // Match nearby area
-          if (location.contains(area) || area.contains(location)) {
-            final String status = (post['status'] ?? '').toString().toLowerCase();
-            if (post['resolved'] != true && status != 'resolved') {
-              loadedAlerts.add(_AlertItem(
-                id: key,
-                icon: _getCategoryIcon(category),
-                iconColor: _getCategoryColor(category),
-                iconBg: _getCategoryBg(category),
-                title: '$category issue reported near ${post['location']}',
-                timeAgo: 'Nearby Area',
-              ));
-            }
-          }
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
         });
+      }
+
+      final List<_AlertItem> loadedAlerts =
+          await _loadAdminNotifications();
+      _blockedUserIds = await _loadBlockedUserIds();
+
+      try {
+        await _detectCurrentArea();
+      } catch (e) {
+        debugPrint("Error detecting alert area: $e");
+      }
+
+      if (_currentArea.isNotEmpty) {
+        final snapshot = await _postsRef.get();
+
+        if (snapshot.exists && snapshot.value is Map) {
+          final raw =
+              Map<String, dynamic>.from(snapshot.value as Map);
+
+          raw.forEach((key, value) {
+            if (value is! Map) return;
+
+            final post =
+                Map<String, dynamic>.from(value);
+
+            final String location =
+                (post['location'] ?? '')
+                    .toString()
+                    .toLowerCase();
+
+            final String category =
+                (post['category'] ?? 'Issue')
+                    .toString();
+            final String ownerUid =
+                (post['uid'] ?? '').toString();
+
+            final String area =
+                _currentArea.toLowerCase();
+
+            if (_blockedUserIds.contains(ownerUid)) return;
+
+            if (location.contains(area) || area.contains(location)) {
+              final String status =
+                  (post['status'] ?? '').toString().toLowerCase();
+              if (post['resolved'] != true && status != 'resolved') {
+                loadedAlerts.add(_AlertItem(
+                  id: key.toString(),
+                  icon: _getCategoryIcon(category),
+                  iconColor: _getCategoryColor(category),
+                  iconBg: _getCategoryBg(category),
+                  title: '$category issue reported near ${post['location']}',
+                  timeAgo: 'Nearby Area',
+                ));
+              }
+            }
+          });
+        }
       }
 
       if (mounted) {
@@ -139,6 +165,115 @@ class _AlertsScreenState extends State<AlertsScreen> {
         });
       }
     }
+  }
+
+  Future<List<_AlertItem>> _loadAdminNotifications() async {
+    final List<_AlertItem> notices = [];
+    final snapshot = await _notificationsRef.get();
+
+    if (!snapshot.exists || snapshot.value is! Map) {
+      return notices;
+    }
+
+    final raw = Map<String, dynamic>.from(snapshot.value as Map);
+    final DateTime now = DateTime.now();
+
+    for (final entry in raw.entries) {
+      if (entry.value is! Map) continue;
+
+      final notification =
+          Map<String, dynamic>.from(entry.value as Map);
+      final String type =
+          (notification['type'] ?? '').toString();
+
+      if (type != 'admin_notify') continue;
+
+      final DateTime? expiresAt =
+          _parseDateTime(notification['expiresAt']);
+      if (expiresAt != null && !expiresAt.isAfter(now)) {
+        await _notificationsRef.child(entry.key).remove();
+        continue;
+      }
+
+      final DateTime? createdAt =
+          _parseDateTime(notification['createdAt']);
+      final String title =
+          _firstText(notification, ['title', 'heading', 'subject']) ??
+              'CityVoice notice';
+      final String? body =
+          _firstText(notification, ['message', 'body', 'description', 'text']);
+
+      notices.add(_AlertItem(
+        id: entry.key,
+        icon: Icons.campaign_rounded,
+        iconColor: const Color(0xFF0052D4),
+        iconBg: const Color(0xFFEAF3FF),
+        title: title,
+        body: body,
+        timeAgo: createdAt == null ? 'Admin notice' : _timeAgo(createdAt),
+        imageAsset: 'assets/images/logo.jpeg',
+        isAdminNotice: true,
+        createdAt: createdAt,
+      ));
+    }
+
+    notices.sort((a, b) {
+      final DateTime aDate =
+          a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final DateTime bDate =
+          b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bDate.compareTo(aDate);
+    });
+
+    return notices;
+  }
+
+  Future<Set<String>> _loadBlockedUserIds() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return {};
+
+    final snapshot = await _usersRef.child(uid).child('blockedUsers').get();
+    if (!snapshot.exists || snapshot.value is! Map) {
+      return {};
+    }
+
+    final data = Map<String, dynamic>.from(snapshot.value as Map);
+    return data.keys.toSet();
+  }
+
+  DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    if (value is double) {
+      return DateTime.fromMillisecondsSinceEpoch(value.round());
+    }
+    final String text = value.toString().trim();
+    if (text.isEmpty) return null;
+    final int? millis = int.tryParse(text);
+    if (millis != null) {
+      return DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+    return DateTime.tryParse(text)?.toLocal();
+  }
+
+  String? _firstText(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final value = data[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return null;
+  }
+
+  String _timeAgo(DateTime dateTime) {
+    final Duration diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -173,41 +308,43 @@ class _AlertsScreenState extends State<AlertsScreen> {
         return AppColors.primary;
 
       case 'water':
-        return const Color(0xFF4A7BE8);
+        return const Color(0xFF1A73E8);
 
       case 'garbage':
-        return const Color(0xFF2ECC71);
+        return const Color(0xFF0052D4);
 
       case 'electricity':
-        return const Color(0xFFF39C12);
+      case 'street lights':
+        return const Color(0xFF3F8CFF);
 
       case 'safety':
-        return const Color(0xFF9B59B6);
+        return const Color(0xFF0D6EFD);
 
       default:
-        return const Color(0xFF1ABCCD);
+        return const Color(0xFF0052D4);
     }
   }
 
   Color _getCategoryBg(String cat) {
     switch (cat.toLowerCase()) {
       case 'roads':
-        return const Color(0xFFFFF0EE);
+        return const Color(0xFFEAF3FF);
 
       case 'water':
-        return const Color(0xFFEEF4FF);
+        return const Color(0xFFEFF6FF);
 
       case 'garbage':
-        return const Color(0xFFEEFBF4);
+        return const Color(0xFFDDEEFF);
 
       case 'electricity':
-        return const Color(0xFFFFFAEE);
+      case 'street lights':
+        return const Color(0xFFEAF3FF);
 
       case 'safety':
-        return const Color(0xFFF5EEFF);
+        return const Color(0xFFE6F1FF);
 
       default:
-        return const Color(0xFFEDF8FB);
+        return const Color(0xFFEAF3FF);
     }
   }
 
@@ -285,8 +422,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
           Text(
             _currentArea.isEmpty
-                ? 'Fetching nearby issues...'
-                : 'Issues around $_currentArea',
+                ? 'Admin notices and nearby issues'
+                : 'Admin notices and issues around $_currentArea',
             style: GoogleFonts.inter(
               fontSize: 13,
               color: AppColors.textLight,
@@ -300,71 +437,133 @@ class _AlertsScreenState extends State<AlertsScreen> {
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildAlertCard(_AlertItem alert, int index) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            // TODO: navigate or other action
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: alert.iconBg,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(alert.icon, color: alert.iconColor, size: 20),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        alert.title,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                          color: AppColors.textDark,
-                          height: 1.45,
+    return SizedBox(
+      width: double.infinity,
+      height: 132,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () {
+              // TODO: navigate or other action
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildAlertIcon(alert),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (alert.isAdminNotice) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEAF3FF),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'CityVoice Notice',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0052D4),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        Text(
+                          alert.title,
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                            height: 1.35,
+                          ),
+                          maxLines: alert.body == null ? 2 : 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        alert.timeAgo,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppColors.textLight,
+                        if (alert.body != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            alert.body!,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.textMedium,
+                              height: 1.45,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const Spacer(),
+                        Text(
+                          alert.timeAgo,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textLight,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAlertIcon(_AlertItem alert) {
+    if (alert.imageAsset != null) {
+      return Container(
+        width: 48,
+        height: 48,
+        padding: const EdgeInsets.all(5),
+        decoration: const BoxDecoration(
+          color: Color(0xFFEAF3FF),
+          shape: BoxShape.circle,
+        ),
+        child: ClipOval(
+          child: Image.asset(
+            alert.imageAsset!,
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        color: alert.iconBg,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(alert.icon, color: alert.iconColor, size: 22),
     );
   }
 
@@ -393,7 +592,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
           const SizedBox(height: 16),
 
           Text(
-            'No nearby alerts',
+            'No alerts yet',
             style: GoogleFonts.inter(
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -404,7 +603,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
           const SizedBox(height: 6),
 
           Text(
-            'No issues were found\nnear your location.',
+            'Admin notices and nearby issues\nwill appear here.',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(
               fontSize: 13,
@@ -426,7 +625,11 @@ class _AlertItem {
   final Color iconColor;
   final Color iconBg;
   final String title;
+  final String? body;
   final String timeAgo;
+  final String? imageAsset;
+  final bool isAdminNotice;
+  final DateTime? createdAt;
 
   const _AlertItem({
     required this.id,
@@ -434,6 +637,10 @@ class _AlertItem {
     required this.iconColor,
     required this.iconBg,
     required this.title,
+    this.body,
     required this.timeAgo,
+    this.imageAsset,
+    this.isAdminNotice = false,
+    this.createdAt,
   });
 }

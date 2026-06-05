@@ -9,7 +9,7 @@ class LandingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF3F8FF),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -51,7 +51,7 @@ class LandingScreen extends StatelessWidget {
               width: 42, // 🔥 increased size
               height: 42,
               child: Image.asset(
-                'assets/images/Icon.png',
+                'assets/images/logo.jpeg',
                 fit: BoxFit.contain,
               ),
             ),
@@ -200,7 +200,7 @@ class LandingScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(100),
         gradient: LinearGradient(
           colors: [
-            Color(0xFFFF7B5F),
+            Color.fromARGB(255, 64, 61, 235),
             AppColors.primary,
           ],
           begin: Alignment.centerLeft,

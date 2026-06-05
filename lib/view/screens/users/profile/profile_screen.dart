@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../models/post_model.dart';
 import '../voices/post_detail_screen.dart';
+import 'settings_page.dart';
 import 'widgets/edit_profile_sheet.dart';
 import 'widgets/vision_card.dart';
 
@@ -501,7 +502,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           SliverToBoxAdapter(child: _buildStatsCard()),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
               child: _buildTabBar(),
             ),
           ),
@@ -577,6 +578,23 @@ class _ProfileScreenState extends State<ProfileScreen>
               // Header Controls (Bell and Gear)
               Row(
                 children: [
+                  GestureDetector(
+                    onTap: _openSettingsPage,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.settings_outlined,
+                        color: Color(0xFF555555),
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
                   GestureDetector(
                     onTap: _logout,
                     child: Container(
@@ -777,12 +795,12 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildPrivateProfileCard() {
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
+        horizontal: 12,
+        vertical: 10,
       ),
       decoration: BoxDecoration(
         color: const Color(0xFFF2F6FC),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: const Color(0xFFE0EAFC),
         ),
@@ -790,8 +808,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 36,
+            height: 36,
             decoration: const BoxDecoration(
               color: Color(0xFFE3EDFA),
               shape: BoxShape.circle,
@@ -799,9 +817,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: const Icon(
               Icons.verified_user_outlined,
               color: Color(0xFF0D6EFD),
+              size: 18,
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -809,20 +828,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Text(
                   'Private Profile',
                   style: GoogleFonts.inter(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF0D6EFD),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   _isPrivateProfile
-                      ? 'Your posts will appear anonymously'
-                      : 'Your name will be visible only on your posts',
+                      ? 'Your posts appear anonymously.'
+                      : 'Your name is visible on posts.',
                   style: GoogleFonts.inter(
-                    fontSize: 12,
+                    fontSize: 11,
                     color: const Color(0xFF555555),
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -845,16 +866,16 @@ class _ProfileScreenState extends State<ProfileScreen>
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF0EE),
+        color: const Color(0xFFEAF3FF),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withOpacity(0.18)),
+        border: Border.all(color: const Color(0xFF1A73E8).withOpacity(0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.block_rounded, color: AppColors.primary),
+              const Icon(Icons.block_rounded, color: Color(0xFF0052D4)),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -922,7 +943,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
+                backgroundColor: const Color(0xFF0D6EFD),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(100),
@@ -935,11 +956,21 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // Opens the Settings hub for safety controls and app information.
+  void _openSettingsPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SettingsPage(),
+      ),
+    );
+  }
+
   // ── Stats ─────────────────────────────────────────────────────────────
 
   Widget _buildStatsCard() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      margin: const EdgeInsets.fromLTRB(24, 8, 24, 0),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
@@ -956,32 +987,32 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           _buildStatItem(
             icon: Icons.campaign_outlined,
-            iconColor: const Color(0xFF0D6EFD),
-            iconBg: const Color(0xFFEFF4FC),
+            iconColor: const Color(0xFF0052D4),
+            iconBg: const Color(0xFFEAF3FF),
             count: _voicesCount,
             label: 'VOICES',
           ),
           _buildStatDivider(),
           _buildStatItem(
             icon: Icons.favorite_border_rounded,
-            iconColor: const Color(0xFF2ECC71),
-            iconBg: const Color(0xFFEBF7EE),
+            iconColor: const Color(0xFF0D6EFD),
+            iconBg: const Color(0xFFD7E9FF),
             count: _supportedCount,
             label: 'SUPPORTED',
           ),
           _buildStatDivider(),
           _buildStatItem(
             icon: Icons.chat_bubble_outline_rounded,
-            iconColor: const Color(0xFF6366F1),
-            iconBg: const Color(0xFFEEF2FF),
+            iconColor: const Color(0xFF3F8CFF),
+            iconBg: const Color(0xFFEAF3FF),
             count: _repliesCount,
             label: 'RESPONSES',
           ),
           _buildStatDivider(),
           _buildStatItem(
             icon: Icons.flag_outlined,
-            iconColor: AppColors.primary,
-            iconBg: const Color(0xFFFFF0EE),
+            iconColor: const Color(0xFF0052D4),
+            iconBg: const Color(0xFFD7E9FF),
             count: _reportedCount,
             label: 'REPORTED',
           ),
@@ -1045,9 +1076,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildTabBar() {
     final tabs = [
-      {'label': 'My', 'icon': Icons.campaign_outlined},
+      {'label': 'My Posts', 'icon': Icons.campaign_outlined},
       {'label': 'Supported', 'icon': Icons.favorite_border_rounded},
-      {'label': 'Replies', 'icon': Icons.chat_bubble_outline_rounded},
+      {'label': 'Responses', 'icon': Icons.chat_bubble_outline_rounded},
       {'label': 'Reported', 'icon': Icons.flag_outlined},
     ];
     return Container(
@@ -1063,11 +1094,14 @@ class _ProfileScreenState extends State<ProfileScreen>
         ],
       ),
       padding: const EdgeInsets.all(5),
-      child: Row(
-        children: List.generate(tabs.length, (i) {
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: List.generate(tabs.length, (i) {
           final isActive = _selectedTab == i;
           final tab = tabs[i];
-          return Expanded(
+          return Padding(
+            padding: EdgeInsets.only(right: i == tabs.length - 1 ? 0 : 6),
             child: GestureDetector(
               onTap: () {
                 _tabController.animateTo(i);
@@ -1075,6 +1109,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
+                width: 132,
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: isActive ? const Color(0xFF0D6EFD) : Colors.transparent,
@@ -1107,6 +1142,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           );
         }),
+        ),
       ),
     );
   }
@@ -1115,7 +1151,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _buildEmptyState(String message) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       children: [
         SizedBox(
           height: 150,
@@ -1142,7 +1178,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (posts.isEmpty) return _buildEmptyState(emptyMessage);
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1194,7 +1230,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1255,7 +1291,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+          border: Border.all(color: const Color(0xFF1A73E8).withOpacity(0.12)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.02),
@@ -1272,16 +1308,16 @@ class _ProfileScreenState extends State<ProfileScreen>
               child: Container(
                 width: 80,
                 height: 80,
-                color: const Color(0xFFFFF0EE),
+                color: const Color(0xFFEAF3FF),
                 child: imageUrl.isNotEmpty
                     ? Image.network(
                         imageUrl,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
-                            const Icon(Icons.flag_outlined, color: AppColors.primary, size: 24),
+                            const Icon(Icons.flag_outlined, color: Color(0xFF0052D4), size: 24),
                       )
                     : const Icon(Icons.flag_outlined,
-                        color: AppColors.primary, size: 24),
+                        color: Color(0xFF0052D4), size: 24),
               ),
             ),
             const SizedBox(width: 14),
@@ -1309,7 +1345,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF0EE),
+                          color: const Color(0xFFEAF3FF),
                           borderRadius: BorderRadius.circular(100),
                         ),
                         child: Text(
@@ -1317,7 +1353,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           style: GoogleFonts.inter(
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
-                            color: AppColors.primary,
+                            color: const Color(0xFF0052D4),
                           ),
                         ),
                       ),
@@ -1340,7 +1376,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: const Color(0xFF0052D4),
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,

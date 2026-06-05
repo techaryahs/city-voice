@@ -2,6 +2,7 @@ import 'package:cityvoice/view/screens/admin/admin_dashboard_screen.dart';
 import 'package:cityvoice/view/screens/landing_screen.dart';
 import 'package:cityvoice/view/screens/users/main_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -40,7 +41,11 @@ class _MyAppState extends State<MyApp> {
       title: 'City Voice',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0D6EFD)),
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+        ),
       ),
       // 🔥 Auth-aware routing: skip sign-in if user is already logged in
       home: StreamBuilder<User?>(
@@ -51,7 +56,7 @@ class _MyAppState extends State<MyApp> {
             return const Scaffold(
               backgroundColor: Colors.white,
               body: Center(
-                child: CircularProgressIndicator(color: Colors.redAccent),
+                child: CircularProgressIndicator(color: Color(0xFF0D6EFD)),
               ),
             );
           }
@@ -63,7 +68,36 @@ class _MyAppState extends State<MyApp> {
             if (user.email == 'admin@cityvoice.com') {
               return const AdminDashboardScreen();
             }
-            return const MainScreen();
+            return FutureBuilder<DataSnapshot>(
+              future: FirebaseDatabase.instance
+                  .ref('users')
+                  .child(user.uid)
+                  .get(),
+              builder: (context, userSnapshot) {
+                if (userSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(
+                    backgroundColor: Colors.white,
+                    body: Center(
+                      child:
+                          CircularProgressIndicator(color: Color(0xFF0D6EFD)),
+                    ),
+                  );
+                }
+
+                final data = userSnapshot.data?.value is Map
+                    ? Map<String, dynamic>.from(
+                        userSnapshot.data!.value as Map,
+                      )
+                    : <String, dynamic>{};
+
+                if (data['emailVerified'] != true) {
+                  FirebaseAuth.instance.signOut();
+                  return const LandingScreen();
+                }
+
+                return const MainScreen();
+              },
+            );
           }
 
           // ❌ Not logged in — show landing/sign-in flow

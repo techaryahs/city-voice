@@ -1,9 +1,14 @@
+import 'dart:math';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:mailer/mailer.dart';
+import 'package:mailer/smtp_server.dart';
 import '../../../core/constants/app_colors.dart';
+import 'email_otp_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -26,6 +31,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _obscureConfirm  = true;
   bool _isLoading = false;
   bool _acceptPolicy = false;
+  String _verifiedEmail = '';
+  String _selectedLanguage = 'English';
+  final List<String> _languages = ['English', 'मराठी', 'हिन्दी'];
 
   final DatabaseReference _dbRef =
   FirebaseDatabase.instance.ref().child("users");
@@ -52,6 +60,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
     String pincode = _pincodeController.text.trim();
     String password = _passwordController.text.trim();
     String confirm = _confirmController.text.trim();
+    final emailRegex = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+    final hasLetter = RegExp(r'[A-Za-z]').hasMatch(password);
+    final hasNumber = RegExp(r'\d').hasMatch(password);
 
     // ✅ Validation
     if (name.isEmpty ||
@@ -65,8 +76,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    if (!email.contains('@') || !email.contains('.')) {
-      _showSnack("Enter valid email");
+    if (!emailRegex.hasMatch(email)) {
+      _showSnack("Enter a valid email address");
       return;
     }
 
@@ -80,8 +91,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return;
     }
 
-    if (password.length < 6) {
-      _showSnack("Password must be at least 6 characters");
+    if (password.length < 6 || !hasLetter || !hasNumber) {
+      _showSnack("Password must be 6+ characters with letters and numbers");
       return;
     }
 
@@ -92,6 +103,38 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     if (!_acceptPolicy) {
       _showSnack("Please accept Privacy Policy");
+      return;
+    }
+
+    if (_verifiedEmail != email) {
+      setState(() => _isLoading = true);
+      try {
+        final otp = await _sendSignupOtp(email);
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EmailOtpScreen(
+              email: email,
+              otp: otp,
+              onResendOtp: () => _sendSignupOtp(email),
+              onVerified: () async {
+                if (mounted) setState(() => _verifiedEmail = email);
+              },
+            ),
+          ),
+        );
+
+        if (mounted && _verifiedEmail == email) {
+          _createAccount();
+        }
+      } catch (e) {
+        _showSnack("Could not send OTP: $e");
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
       return;
     }
 
@@ -115,6 +158,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
         "email": email,
         "address": address,
         "pincode": pincode,
+        "emailVerified": true,
+        "emailVerifiedAt": DateTime.now().toIso8601String(),
         "isBlocked": false,
         "createdAt": DateTime.now().toIso8601String(),
       });
@@ -140,6 +185,24 @@ class _SignUpScreenState extends State<SignUpScreen> {
     finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  // Sends a six-digit signup OTP to the user's email address.
+  Future<String> _sendSignupOtp(String email) async {
+    final otp = (100000 + Random.secure().nextInt(900000)).toString();
+    const username = 'cityvoiceofficial@gmail.com';
+    const password = 'nzrdrnffjaojwpxg';
+    final smtpServer = gmail(username, password);
+
+    final message = Message()
+      ..from = const Address(username, 'CityVoice India')
+      ..recipients.add(email)
+      ..subject = 'Your CityVoice email verification OTP'
+      ..text =
+          'Your CityVoice India verification OTP is $otp.\n\nThis code is required to create your account. If you did not request this, please ignore this email.';
+
+    await send(message, smtpServer);
+    return otp;
   }
 
   void _showSnack(String message) {
@@ -323,7 +386,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 width: 42, // 🔥 increased size
                 height: 42,
                 child: Image.asset(
-                  'assets/images/Icon.png',
+                  'assets/images/logo.jpeg',
                   fit: BoxFit.contain,
                 ),
               ),
@@ -344,30 +407,59 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Widget _buildLanguageChip() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(100),
-        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        border: Border.all(color: const Color(0xFFD7E9FF)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
+            color: const Color(0xFF0D6EFD).withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          )
         ],
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.language_rounded, size: 15, color: AppColors.textMedium),
-          const SizedBox(width: 5),
-          Text('English',
-              style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textDark)),
-          const SizedBox(width: 3),
-          Icon(Icons.keyboard_arrow_down_rounded,
-              size: 16, color: AppColors.textMedium),
+          const Icon(
+            Icons.language_rounded,
+            size: 16,
+            color: Color(0xFF0052D4),
+          ),
+          const SizedBox(width: 6),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedLanguage,
+              borderRadius: BorderRadius.circular(14),
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: Color(0xFF0052D4),
+              ),
+              items: _languages
+                  .map(
+                    (language) => DropdownMenuItem<String>(
+                      value: language,
+                      child: Text(
+                        language,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _selectedLanguage = value);
+                }
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -573,7 +665,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(100),
         gradient: const LinearGradient(
-          colors: [Color(0xFFFF7B5F), AppColors.primary],
+          colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),

@@ -87,8 +87,10 @@ class VoicesScreen extends StatefulWidget {
 
 class _VoicesScreenState extends State<VoicesScreen> {
   final _postsRef  = FirebaseDatabase.instance.ref('posts');
-  final _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final _usersRef = FirebaseDatabase.instance.ref('users');
+  String get _currentUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String _userLocation = 'Fetching location...';
+  Set<String> _blockedUserIds = {};
 
   final TextEditingController _searchController =
   TextEditingController();
@@ -113,6 +115,27 @@ class _VoicesScreenState extends State<VoicesScreen> {
   void initState() {
     super.initState();
     _getUserLocation();
+    _listenToBlockedUsers();
+  }
+
+  void _listenToBlockedUsers() {
+    final currentUid = _currentUid;
+    if (currentUid.isEmpty) return;
+
+    _usersRef.child(currentUid).child('blockedUsers').onValue.listen((event) {
+      final blocked = <String>{};
+      if (event.snapshot.value is Map) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        for (final entry in data.entries) {
+          if (entry.value == true || entry.value is Map) {
+            blocked.add(entry.key);
+          }
+        }
+      }
+      if (mounted) {
+        setState(() => _blockedUserIds = blocked);
+      }
+    });
   }
 
   // ── Support toggle ──────────────────────────────────────────────────────────
@@ -249,9 +272,85 @@ Support this voice on CityVoice app.
         return Transaction.success(data);
       });
 
-      _showSnack('Post reported. Thank you for helping keep CityVoice safe.');
+      _showSnack('Post reported and added to your profile.');
     } catch (e) {
       _showSnack('Failed to report post: $e');
+    }
+  }
+
+  Future<void> _toggleBlockUser(VoicePost post) async {
+    if (widget.readOnly) {
+      _showBlockedNotice();
+      return;
+    }
+
+    final currentUid = _currentUid;
+    if (currentUid.isEmpty || post.uid.isEmpty || post.uid == currentUid) {
+      return;
+    }
+
+    final bool isBlocked = _blockedUserIds.contains(post.uid);
+    final String action = isBlocked ? 'Unblock' : 'Block';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          '$action ${post.name}',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          isBlocked
+              ? 'You will start seeing updates from this user again.'
+              : 'You will stop seeing posts and updates from this user.',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            color: AppColors.textMedium,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final ref =
+        _usersRef.child(currentUid).child('blockedUsers').child(post.uid);
+    final mirrorRef = FirebaseDatabase.instance
+        .ref('userBlocks')
+        .child(currentUid)
+        .child(post.uid);
+
+    try {
+      if (isBlocked) {
+        await ref.remove();
+        try {
+          await mirrorRef.remove();
+        } catch (_) {}
+        _showSnack('${post.name} unblocked.');
+      } else {
+        final blockData = {
+          'uid': post.uid,
+          'name': post.name,
+          'blockedAt': DateTime.now().toIso8601String(),
+        };
+        await ref.set(blockData);
+        try {
+          await mirrorRef.set(blockData);
+        } catch (_) {}
+        _showSnack('${post.name} blocked.');
+      }
+    } catch (e) {
+      _showSnack('Could not update blocked users: $e');
     }
   }
 
@@ -433,8 +532,12 @@ Support this voice on CityVoice app.
                             post.category.toLowerCase() ==
                                 _selectedCategory.toLowerCase();
 
+                    final isBlockedUser = post.uid != _currentUid &&
+                        _blockedUserIds.contains(post.uid);
+
                     return matchesSearch &&
-                        matchesCategory;
+                        matchesCategory &&
+                        !isBlockedUser;
                   })
                       .toList()
 
@@ -918,6 +1021,50 @@ Support this voice on CityVoice app.
 
                   const Spacer(),
 
+                  if (!widget.readOnly &&
+                      post.uid.isNotEmpty &&
+                      post.uid != _currentUid)
+                    GestureDetector(
+                      onTap: () => _toggleBlockUser(post),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEAF3FF),
+                          borderRadius: BorderRadius.circular(100),
+                          border: Border.all(
+                            color: const Color(0xFF1A73E8).withOpacity(0.18),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _blockedUserIds.contains(post.uid)
+                                  ? Icons.person_add_alt_1_outlined
+                                  : Icons.person_off_outlined,
+                              color: const Color(0xFF0052D4),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _blockedUserIds.contains(post.uid)
+                                  ? 'Unblock'
+                                  : 'Block',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0052D4),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
                   if (!widget.readOnly)
                     GestureDetector(
                       onTap: () => _reportPost(post),
@@ -927,17 +1074,17 @@ Support this voice on CityVoice app.
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF0EE),
+                          color: const Color(0xFFEAF3FF),
                           borderRadius: BorderRadius.circular(100),
                           border: Border.all(
-                            color: AppColors.primary.withOpacity(0.18),
+                            color: const Color(0xFF1A73E8).withOpacity(0.18),
                           ),
                         ),
                         child: Row(
                           children: [
                             const Icon(
                               Icons.flag_outlined,
-                              color: AppColors.primary,
+                              color: const Color(0xFF0052D4),
                               size: 16,
                             ),
                             const SizedBox(width: 4),
@@ -946,7 +1093,7 @@ Support this voice on CityVoice app.
                               style: GoogleFonts.inter(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
+                                color: const Color(0xFF0052D4),
                               ),
                             ),
                           ],
