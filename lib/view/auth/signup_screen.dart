@@ -382,21 +382,24 @@ class _SignUpScreenState extends State<SignUpScreen> {
         children: [
           Row(
             children: [
-              Container(
-                width: 42, // 🔥 increased size
-                height: 42,
-                child: Image.asset(
-                  'assets/images/logo.jpeg',
-                  fit: BoxFit.contain,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                    child: Image.asset(
+                      'assets/images/logo.jpeg',
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
                 ),
               ),
-              const SizedBox(width: 10),
-              Text('CityVoice',
-                  style: GoogleFonts.inter(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark,
-                      letterSpacing: -0.3)),
+              const SizedBox(width: 8),
+              Text(
+                'CityVoice',
+                style: GoogleFonts.inter(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black,
+                      letterSpacing: -0.5,
+                      )),
             ],
           ),
           _buildLanguageChip(),
