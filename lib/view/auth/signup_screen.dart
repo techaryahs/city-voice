@@ -410,16 +410,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Widget _buildLanguageChip() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(100),
         border: Border.all(color: const Color(0xFFD7E9FF)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0D6EFD).withOpacity(0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: const Color(0xFF0D6EFD).withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           )
         ],
       ),
@@ -428,10 +428,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
         children: [
           const Icon(
             Icons.language_rounded,
-            size: 16,
+            size: 15,
             color: Color(0xFF0052D4),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 5),
           DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: _selectedLanguage,
@@ -449,7 +449,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         language,
                         style: GoogleFonts.inter(
                           fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                           color: AppColors.textDark,
                         ),
                       ),
