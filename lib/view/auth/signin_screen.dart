@@ -154,62 +154,87 @@ class _SignInScreenState extends State<SignInScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              _buildNavBar(),
-              _buildIllustration(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 28),
-                    _buildHeading(),
-                    const SizedBox(height: 32),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFEAF3FF), Color(0xFFF7FAFF), Colors.white],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Column(
+              children: [
+                _buildNavBar(),
+                _buildHeroPanel(),
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.96),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0D6EFD).withOpacity(0.10),
+                        blurRadius: 28,
+                        offset: const Offset(0, 14),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeading(),
+                      const SizedBox(height: 26),
 
-                    _buildLabel('Email'),
-                    const SizedBox(height: 8),
-                    _buildEmailField(),
+                      _buildLabel('Email'),
+                      const SizedBox(height: 8),
+                      _buildEmailField(),
 
-                    const SizedBox(height: 20),
+                      const SizedBox(height: 18),
 
-                    _buildLabel('Password'),
-                    const SizedBox(height: 8),
-                    _buildPasswordField(),
+                      _buildLabel('Password'),
+                      const SizedBox(height: 8),
+                      _buildPasswordField(),
 
-                    const SizedBox(height: 12),
-                    _buildForgotPassword(),
+                      const SizedBox(height: 12),
+                      _buildForgotPassword(),
 
-                    const SizedBox(height: 32),
-                    _buildContinueButton(),
+                      const SizedBox(height: 26),
+                      _buildContinueButton(),
 
-                    const SizedBox(height: 28),
-                    _buildDivider(),
+                      const SizedBox(height: 24),
+                      _buildDivider(),
 
-                    const SizedBox(height: 28),
-                    _buildSignUpRow(),
+                      const SizedBox(height: 22),
+                      _buildSignUpRow(),
 
-                    const SizedBox(height: 18),
+                      const SizedBox(height: 18),
 
-                    GestureDetector(
-                      onTap: _openPrivacyPolicy,
-                      child: Text(
-                        'Privacy Policy',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: AppColors.primary,
-                          decoration: TextDecoration.underline,
-                          fontWeight: FontWeight.w600,
+                      Center(
+                        child: GestureDetector(
+                          onTap: _openPrivacyPolicy,
+                          child: Text(
+                            'Privacy Policy',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.primary,
+                              decoration: TextDecoration.underline,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-
-                    const SizedBox(height: 32),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -219,13 +244,14 @@ class _SignInScreenState extends State<SignInScreen> {
   Widget _buildEmailField() {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xFFF8FAFF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2ECFF)),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+              blurRadius: 10,
+              offset: const Offset(0, 4))
         ],
       ),
       child: TextField(
@@ -237,7 +263,7 @@ class _SignInScreenState extends State<SignInScreen> {
           hintStyle:
           GoogleFonts.inter(fontSize: 15, color: AppColors.textLight),
           prefixIcon:
-          Icon(Icons.mail_outline, color: AppColors.textLight, size: 20),
+          const Icon(Icons.mail_outline, color: Color(0xFF6D8BBD), size: 20),
           border: InputBorder.none,
           contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -249,13 +275,14 @@ class _SignInScreenState extends State<SignInScreen> {
   Widget _buildPasswordField() {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xFFF8FAFF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2ECFF)),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+              blurRadius: 10,
+              offset: const Offset(0, 4))
         ],
       ),
       child: TextField(
@@ -265,7 +292,7 @@ class _SignInScreenState extends State<SignInScreen> {
         decoration: InputDecoration(
           hintText: 'At least 6 characters',
           prefixIcon:
-          Icon(Icons.lock_outline, color: AppColors.textLight, size: 20),
+          const Icon(Icons.lock_outline, color: Color(0xFF6D8BBD), size: 20),
           suffixIcon: IconButton(
             icon: Icon(
               _obscurePassword
@@ -286,7 +313,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
   Widget _buildNavBar() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -295,20 +322,22 @@ class _SignInScreenState extends State<SignInScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: Image.asset(
-                'assets/images/logo.jpeg',
-                width: 32,
-                height: 32,
-                fit: BoxFit.cover,
+                  'assets/images/logo.jpeg',
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(width: 8),
-              Text('CityVoice',
-                  style: GoogleFonts.inter(
+              Text(
+                'CityVoice',
+                style: GoogleFonts.inter(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   color: Colors.black,
-                  letterSpacing: -0.5,
-                )),
+                  letterSpacing: 0,
+                ),
+              ),
             ],
           ),
           _buildLanguageChip(),
@@ -319,9 +348,9 @@ class _SignInScreenState extends State<SignInScreen> {
 
   Widget _buildLanguageChip() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: Colors.white.withOpacity(0.9),
         borderRadius: BorderRadius.circular(100),
         border: Border.all(color: const Color(0xFFD7E9FF)),
         boxShadow: [
@@ -337,19 +366,37 @@ class _SignInScreenState extends State<SignInScreen> {
         children: [
           const Icon(
             Icons.language_rounded,
-            size: 15,
+            size: 14,
             color: Color(0xFF0052D4),
           ),
-          const SizedBox(width: 5),
+          const SizedBox(width: 3),
           DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: _selectedLanguage,
+              isDense: true,
               borderRadius: BorderRadius.circular(14),
               icon: const Icon(
                 Icons.keyboard_arrow_down_rounded,
-                size: 18,
+                size: 16,
                 color: Color(0xFF0052D4),
               ),
+              selectedItemBuilder: (context) {
+                return _languages
+                    .map(
+                      (language) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _languageShortLabel(language),
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList();
+              },
               items: _languages
                   .map(
                     (language) => DropdownMenuItem<String>(
@@ -357,7 +404,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       child: Text(
                         language,
                         style: GoogleFonts.inter(
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w500,
                           color: AppColors.textDark,
                         ),
@@ -377,11 +424,60 @@ class _SignInScreenState extends State<SignInScreen> {
     );
   }
 
-  Widget _buildIllustration() {
-    return Image.asset(
-      'assets/images/community.png',
-      height: 200,
-      fit: BoxFit.contain,
+  Widget _buildHeroPanel() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Column(
+        children: [
+          Image.asset(
+            'assets/images/community.png',
+            height: 176,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildTrustChip(Icons.verified_user_outlined, 'Verified voices'),
+              const SizedBox(width: 8),
+              _buildTrustChip(Icons.location_on_outlined, 'Local updates'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _languageShortLabel(String language) {
+    final index = _languages.indexOf(language);
+    if (index == 1) return 'MR';
+    if (index == 2) return 'HI';
+    return 'EN';
+  }
+
+  Widget _buildTrustChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(100),
+        border: Border.all(color: const Color(0xFFD7E9FF)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -398,7 +494,7 @@ class _SignInScreenState extends State<SignInScreen> {
               fontSize: 28,
               fontWeight: FontWeight.w800,
               color: AppColors.textDark,
-              letterSpacing: -0.5,
+              letterSpacing: 0,
             ),
           ),
         ),
@@ -417,12 +513,15 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: GoogleFonts.inter(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textDark,
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        text,
+        style: GoogleFonts.inter(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textDark,
+        ),
       ),
     );
   }
@@ -509,7 +608,7 @@ class _SignInScreenState extends State<SignInScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(100),
         gradient: const LinearGradient(
-          colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
+          colors: [Color(0xFF0087FF), Color(0xFF006BFF), Color(0xFF0052D4)],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
@@ -517,7 +616,7 @@ class _SignInScreenState extends State<SignInScreen> {
           BoxShadow(
             color: AppColors.primary.withOpacity(0.4),
             blurRadius: 20,
-            offset: const Offset(0, 8),
+            offset: const Offset(0, 10),
           ),
         ],
       ),

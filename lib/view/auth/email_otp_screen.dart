@@ -95,63 +95,83 @@ class _EmailOtpScreenState extends State<EmailOtpScreen> {
         foregroundColor: AppColors.textDark,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Spacer(),
-              Container(
-                width: 74,
-                height: 74,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFEAF3FF),
-                  shape: BoxShape.circle,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const horizontalPadding = 24.0;
+            const topPadding = 24.0;
+            const bottomPadding = 32.0;
+            final minContentHeight =
+                constraints.maxHeight - topPadding - bottomPadding;
+
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(
+                horizontalPadding,
+                topPadding,
+                horizontalPadding,
+                bottomPadding,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: minContentHeight > 0 ? minContentHeight : 0,
                 ),
-                child: const Icon(
-                  Icons.mark_email_read_outlined,
-                  color: Color(0xFF0052D4),
-                  size: 34,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 74,
+                      height: 74,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEAF3FF),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.mark_email_read_outlined,
+                        color: Color(0xFF0052D4),
+                        size: 34,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Text(
+                      'Verify your email',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Enter the 6-digit OTP sent to\n${widget.email}',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AppColors.textMedium,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    _buildOtpField(),
+                    const SizedBox(height: 22),
+                    _buildVerifyButton(),
+                    const SizedBox(height: 18),
+                    TextButton(
+                      onPressed: _isResending ? null : _resendOtp,
+                      child: Text(
+                        _isResending ? 'Sending...' : 'Resend OTP',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 22),
-              Text(
-                'Verify your email',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Enter the 6-digit OTP sent to\n${widget.email}',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: AppColors.textMedium,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 30),
-              _buildOtpField(),
-              const SizedBox(height: 22),
-              _buildVerifyButton(),
-              const SizedBox(height: 18),
-              TextButton(
-                onPressed: _isResending ? null : _resendOtp,
-                child: Text(
-                  _isResending ? 'Sending...' : 'Resend OTP',
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-              const Spacer(flex: 2),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );

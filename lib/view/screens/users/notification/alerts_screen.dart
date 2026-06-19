@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -146,9 +148,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
   List<_AlertItem> _alerts = [];
   Set<String> _blockedUserIds = {};
   bool _isLoading = true;
+  bool _hasLoadedOnce = false;
+  bool _isRefreshing = false;
   String _currentArea = '';
   _AlertFilter _selectedFilter = _AlertFilter.all;
   final Set<String> _expandedIds = {};
+  StreamSubscription<DatabaseEvent>? _postsSubscription;
+  StreamSubscription<DatabaseEvent>? _notificationsSubscription;
+  StreamSubscription<DatabaseEvent>? _blockedUsersSubscription;
+  Timer? _refreshDebounce;
 
   static const _kBlue     = Color(0xFF1A54C4);
   static const _kBlueBg   = Color(0xFFEEF3FF);
@@ -159,7 +167,43 @@ class _AlertsScreenState extends State<AlertsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAlerts();
+    _loadAlerts(showLoading: true);
+    _startLiveRefresh();
+  }
+
+  @override
+  void dispose() {
+    _postsSubscription?.cancel();
+    _notificationsSubscription?.cancel();
+    _blockedUsersSubscription?.cancel();
+    _refreshDebounce?.cancel();
+    super.dispose();
+  }
+
+  void _startLiveRefresh() {
+    _postsSubscription = _postsRef.onValue.listen((_) {
+      _scheduleSilentRefresh();
+    });
+    _notificationsSubscription = _notificationsRef.onValue.listen((_) {
+      _scheduleSilentRefresh();
+    });
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _blockedUsersSubscription =
+          _usersRef.child(uid).child('blockedUsers').onValue.listen((_) {
+        _scheduleSilentRefresh();
+      });
+    }
+  }
+
+  void _scheduleSilentRefresh() {
+    if (!_hasLoadedOnce) return;
+
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(milliseconds: 500), () {
+      _loadAlerts(showLoading: false);
+    });
   }
 
   // ── Location ────────────────────────────────────────────────
@@ -192,9 +236,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   // ── Data ────────────────────────────────────────────────────
 
-  Future<void> _loadAlerts() async {
+  Future<void> _loadAlerts({required bool showLoading}) async {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+
     try {
-      if (mounted) setState(() => _isLoading = true);
+      if (showLoading && mounted) setState(() => _isLoading = true);
 
       final List<_AlertItem> loaded = [];
       _blockedUserIds = await _loadBlockedUserIds();
@@ -261,11 +308,14 @@ class _AlertsScreenState extends State<AlertsScreen> {
         setState(() {
           _alerts = loaded;
           _isLoading = false;
+          _hasLoadedOnce = true;
         });
       }
     } catch (e) {
       debugPrint('Error loading alerts: $e');
       if (mounted) setState(() => _isLoading = false);
+    } finally {
+      _isRefreshing = false;
     }
   }
 

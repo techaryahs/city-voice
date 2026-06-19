@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'all_posts_screen.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -50,6 +52,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   bool _isPrivateProfile = false;
   final TextEditingController _claimController = TextEditingController();
+  StreamSubscription<DatabaseEvent>? _userSubscription;
 
   @override
   void initState() {
@@ -58,7 +61,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     _tabController.addListener(() {
       if (mounted) setState(() => _selectedTab = _tabController.index);
     });
-    _fetchUserData();
+    _listenToUserData();
     _listenToMyPosts();
     _listenToSupportedPosts();
     _listenToRespondedPosts();
@@ -67,6 +70,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   @override
   void dispose() {
+    _userSubscription?.cancel();
     _tabController.dispose();
     _claimController.dispose();
     super.dispose();
@@ -320,7 +324,43 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  Future<void> _fetchUserData() async {
+  void _listenToUserData() {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    _userSubscription = _usersRef.child(user.uid).onValue.listen((event) {
+      if (!mounted) return;
+
+      if (event.snapshot.exists && event.snapshot.value is Map) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        final address = (data['address'] ?? '').toString().trim();
+        final pincode = (data['pincode'] ?? '').toString().trim();
+
+        setState(() {
+          _name = (data['name'] ?? 'User').toString();
+          _email = (data['email'] ?? user.email ?? '').toString();
+          _location = [address, pincode].where((s) => s.isNotEmpty).join(', ');
+          _isPrivateProfile = (data['isPrivateProfile'] ?? false) == true;
+          _isBlocked = widget.readOnly ||
+              data['isBlocked'] == true ||
+              data['blocked'] == true;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _email = user.email ?? '';
+          _name = user.displayName ?? 'User';
+          _isBlocked = widget.readOnly;
+          _isLoading = false;
+        });
+      }
+    }, onError: (Object e) {
+      debugPrint('ProfileScreen: failed to listen to user data - $e');
+      if (mounted) setState(() => _isLoading = false);
+    });
+  }
+
+  Future<void> fetchUserData() async {
     
     try {
       final user = _auth.currentUser;
