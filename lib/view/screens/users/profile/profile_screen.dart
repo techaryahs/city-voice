@@ -41,6 +41,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   String _name = '';
   String _email = '';
   String _location = '';
+  String _profileImageUrl = '';
   int _voicesCount = 0;
   int _supportedCount = 0;
   int _repliesCount = 0;
@@ -341,6 +342,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           _name = (data['name'] ?? 'User').toString();
           _email = (data['email'] ?? user.email ?? '').toString();
           _location = [address, pincode].where((s) => s.isNotEmpty).join(', ');
+          _profileImageUrl = _readProfileImageUrl(data, user);
           _isPrivateProfile = (data['isPrivateProfile'] ?? false) == true;
           _isBlocked = widget.readOnly ||
               data['isBlocked'] == true ||
@@ -351,6 +353,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         setState(() {
           _email = user.email ?? '';
           _name = user.displayName ?? 'User';
+          _profileImageUrl = user.photoURL ?? '';
           _isBlocked = widget.readOnly;
           _isLoading = false;
         });
@@ -382,6 +385,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           _location = [address, pincode]
               .where((s) => s.isNotEmpty)
               .join(', ');
+          _profileImageUrl = _readProfileImageUrl(data, user);
           _isPrivateProfile =
               (data['isPrivateProfile'] ?? false) == true;
           _isBlocked = widget.readOnly ||
@@ -392,6 +396,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         setState(() {
           _email = user.email ?? '';
           _name = user.displayName ?? 'User';
+          _profileImageUrl = user.photoURL ?? '';
           _isBlocked = widget.readOnly;
         });
       }
@@ -465,6 +470,22 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  String _firstText(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final text = data[key]?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
+  String _readProfileImageUrl(Map<String, dynamic> data, User user) {
+    final storedUrl = _firstText(
+      data,
+      ['profileImageUrl', 'profile_image_url', 'photoUrl', 'photoURL'],
+    );
+    return storedUrl.isNotEmpty ? storedUrl : user.photoURL ?? '';
+  }
+
   void _showEditProfileSheet() {
     if (_isBlocked) {
       _showSnack('Your account is blocked. You can only view posts.');
@@ -479,11 +500,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         currentName: _name,
         currentEmail: _email,
         currentLocation: _location,
-        onProfileUpdated: (name, email, location) {
+        currentProfileImageUrl: _profileImageUrl,
+        onProfileUpdated: (name, email, location, profileImageUrl) {
           setState(() {
             _name = name;
             _email = email;
             _location = location;
+            _profileImageUrl = profileImageUrl;
           });
         },
       ),
@@ -700,15 +723,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                               end: Alignment.bottomRight,
                             ),
                           ),
-                          child: Center(
-                            child: Text(
-                              _name.isNotEmpty ? _name[0].toUpperCase() : '?',
-                              style: GoogleFonts.inter(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white),
-                            ),
-                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: _profileImageUrl.isNotEmpty
+                              ? Image.network(
+                                  _profileImageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      _buildInitialAvatar(),
+                                )
+                              : _buildInitialAvatar(),
                         ),
                         Positioned(
                           bottom: 0,
@@ -904,6 +927,19 @@ class _ProfileScreenState extends State<ProfileScreen>
             onChanged: _isBlocked ? null : _togglePrivateProfile,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInitialAvatar() {
+    return Center(
+      child: Text(
+        _name.isNotEmpty ? _name[0].toUpperCase() : '?',
+        style: GoogleFonts.inter(
+          fontSize: 36,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
       ),
     );
   }

@@ -55,7 +55,7 @@ extension _AlertTypeProps on _AlertType {
       case _AlertType.update:
         return const Color(0xFF1A54C4);
       case _AlertType.reply:
-        return const Color(0xFFE65100);
+        return const Color(0xFF1A54C4);
       case _AlertType.support:
         return const Color(0xFF1A54C4);
       case _AlertType.system:
@@ -68,7 +68,7 @@ extension _AlertTypeProps on _AlertType {
       case _AlertType.update:
         return const Color(0xFFEEF3FF);
       case _AlertType.reply:
-        return const Color(0xFFFFF3E0);
+        return const Color(0xFFEEF3FF);
       case _AlertType.support:
         return const Color(0xFFEEF3FF);
       case _AlertType.system:
@@ -140,6 +140,8 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   final DatabaseReference _postsRef =
       FirebaseDatabase.instance.ref('posts');
+  final DatabaseReference _repliesRef =
+      FirebaseDatabase.instance.ref('replies');
   final DatabaseReference _notificationsRef =
       FirebaseDatabase.instance.ref('notifications');
   final DatabaseReference _usersRef =
@@ -154,6 +156,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   _AlertFilter _selectedFilter = _AlertFilter.all;
   final Set<String> _expandedIds = {};
   StreamSubscription<DatabaseEvent>? _postsSubscription;
+  StreamSubscription<DatabaseEvent>? _repliesSubscription;
   StreamSubscription<DatabaseEvent>? _notificationsSubscription;
   StreamSubscription<DatabaseEvent>? _blockedUsersSubscription;
   Timer? _refreshDebounce;
@@ -174,6 +177,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   @override
   void dispose() {
     _postsSubscription?.cancel();
+    _repliesSubscription?.cancel();
     _notificationsSubscription?.cancel();
     _blockedUsersSubscription?.cancel();
     _refreshDebounce?.cancel();
@@ -182,6 +186,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   void _startLiveRefresh() {
     _postsSubscription = _postsRef.onValue.listen((_) {
+      _scheduleSilentRefresh();
+    });
+    _repliesSubscription = _repliesRef.onValue.listen((_) {
       _scheduleSilentRefresh();
     });
     _notificationsSubscription = _notificationsRef.onValue.listen((_) {
@@ -254,47 +261,65 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
       loaded.addAll(await _loadAdminNotifications());
 
-      if (_currentArea.isNotEmpty) {
-        final snapshot = await _postsRef.get();
-        if (snapshot.exists && snapshot.value is Map) {
-          final raw =
-              Map<String, dynamic>.from(snapshot.value as Map);
-          final now = DateTime.now();
+      final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      final ownerPostTitles = <String, String>{};
+      final ownerPostImages = <String, String>{};
 
-          raw.forEach((key, value) {
-            if (value is! Map) return;
-            final post = Map<String, dynamic>.from(value);
-            final String location =
-                (post['location'] ?? '').toString().toLowerCase();
-            final String category =
-                (post['category'] ?? 'Issue').toString();
-            final String ownerUid = (post['uid'] ?? '').toString();
-            final String area = _currentArea.toLowerCase();
+      final snapshot = await _postsRef.get();
+      if (snapshot.exists && snapshot.value is Map) {
+        final raw = Map<String, dynamic>.from(snapshot.value as Map);
+        final now = DateTime.now();
 
-            if (_blockedUserIds.contains(ownerUid)) return;
-            if (!(location.contains(area) || area.contains(location))) return;
+        raw.forEach((key, value) {
+          if (value is! Map) return;
+          final post = Map<String, dynamic>.from(value);
+          final String location =
+              (post['location'] ?? '').toString().toLowerCase();
+          final String category = (post['category'] ?? 'Issue').toString();
+          final String ownerUid = (post['uid'] ?? '').toString();
+          final String area = _currentArea.toLowerCase();
 
-            final String status =
-                (post['status'] ?? '').toString().toLowerCase();
-            if (post['resolved'] == true || status == 'resolved') return;
+          if (currentUid.isNotEmpty && ownerUid == currentUid) {
+            ownerPostTitles[key.toString()] =
+                post['description']?.toString() ?? 'your issue';
+            ownerPostImages[key.toString()] =
+                post['image_url']?.toString() ?? '';
+          }
 
-            final DateTime createdAt =
-                _parseDateTime(post['timestamp']) ?? now;
-            final bool isNew = now.difference(createdAt).inHours < 24;
+          if (_currentArea.isEmpty) return;
+          if (_blockedUserIds.contains(ownerUid)) return;
+          if (!(location.contains(area) || area.contains(location))) return;
 
-            loaded.add(_AlertItem(
-              id: key.toString(),
-              type: _AlertType.update,
-              title: '$category issue reported near ${post['location']}',
-              subtitle: post['description']?.toString(),
-              createdAt: createdAt,
-              isNew: isNew,
-              icon: _getCategoryIcon(category),
-              iconColor: _getCategoryColor(category),
-              iconBg: _getCategoryBg(category),
-            ));
-          });
-        }
+          final String status =
+              (post['status'] ?? '').toString().toLowerCase();
+          if (post['resolved'] == true || status == 'resolved') return;
+
+          final DateTime createdAt =
+              _parseDateTime(post['timestamp']) ?? now;
+          final bool isNew = now.difference(createdAt).inHours < 24;
+
+          loaded.add(_AlertItem(
+            id: key.toString(),
+            type: _AlertType.update,
+            title: '$category issue reported near ${post['location']}',
+            subtitle: post['description']?.toString(),
+            createdAt: createdAt,
+            isNew: isNew,
+            icon: _getCategoryIcon(category),
+            iconColor: _getCategoryColor(category),
+            iconBg: _getCategoryBg(category),
+          ));
+        });
+      }
+
+      if (ownerPostTitles.isNotEmpty) {
+        loaded.addAll(
+          await _loadReplyAlerts(
+            currentUid: currentUid,
+            ownerPostTitles: ownerPostTitles,
+            ownerPostImages: ownerPostImages,
+          ),
+        );
       }
 
       // System notices first, then by newest timestamp
@@ -317,6 +342,86 @@ class _AlertsScreenState extends State<AlertsScreen> {
     } finally {
       _isRefreshing = false;
     }
+  }
+
+  Future<List<_AlertItem>> _loadReplyAlerts({
+    required String currentUid,
+    required Map<String, String> ownerPostTitles,
+    required Map<String, String> ownerPostImages,
+  }) async {
+    final snapshot = await _repliesRef.get();
+    if (!snapshot.exists || snapshot.value is! Map) return [];
+
+    final rawReplies = Map<String, dynamic>.from(snapshot.value as Map);
+    final now = DateTime.now();
+    final alerts = <_AlertItem>[];
+
+    for (final postEntry in rawReplies.entries) {
+      final postId = postEntry.key.toString();
+      if (!ownerPostTitles.containsKey(postId) || postEntry.value is! Map) {
+        continue;
+      }
+
+      final replies = Map<String, dynamic>.from(postEntry.value as Map);
+      for (final replyEntry in replies.entries) {
+        if (replyEntry.value is! Map) continue;
+        final reply = Map<String, dynamic>.from(replyEntry.value as Map);
+        final replyUid = (reply['uid'] ?? '').toString();
+        if (replyUid.isEmpty ||
+            replyUid == currentUid ||
+            _blockedUserIds.contains(replyUid)) {
+          continue;
+        }
+
+        final responderName = await _resolveUserName(
+          replyUid,
+          fallback: _firstText(
+            reply,
+            ['name', 'fullName', 'userName', 'displayName', 'email'],
+            fallback: 'Someone',
+          ),
+        );
+        final createdAt = _parseDateTime(reply['timestamp']) ?? now;
+
+        alerts.add(_AlertItem(
+          id: 'reply_${postId}_${replyEntry.key}',
+          type: _AlertType.reply,
+          title: '$responderName responded to your issue',
+          subtitle: reply['text']?.toString(),
+          createdAt: createdAt,
+          isNew: now.difference(createdAt).inHours < 24,
+          thumbnailUrl: ownerPostImages[postId],
+        ));
+      }
+    }
+
+    return alerts;
+  }
+
+  Future<String> _resolveUserName(String uid, {String? fallback}) async {
+    if (!_isGenericName(fallback)) return fallback!.trim();
+
+    try {
+      final snap = await _usersRef.child(uid).get();
+      if (snap.value is Map) {
+        final userData = Map<String, dynamic>.from(snap.value as Map);
+        final name = _firstText(
+          userData,
+          ['name', 'fullName', 'userName', 'displayName', 'email'],
+        );
+        if (!_isGenericName(name)) return name!.trim();
+      }
+    } catch (_) {}
+
+    return fallback?.trim().isNotEmpty == true ? fallback!.trim() : 'Someone';
+  }
+
+  bool _isGenericName(String? name) {
+    final normalized = name?.trim().toLowerCase() ?? '';
+    return normalized.isEmpty ||
+        normalized == 'user' ||
+        normalized == 'anonymous' ||
+        normalized == 'someone';
   }
 
   Future<List<_AlertItem>> _loadAdminNotifications() async {
@@ -452,14 +557,18 @@ class _AlertsScreenState extends State<AlertsScreen> {
     return DateTime.tryParse(text)?.toLocal();
   }
 
-  String? _firstText(Map<String, dynamic> data, List<String> keys) {
+  String? _firstText(
+    Map<String, dynamic> data,
+    List<String> keys, {
+    String? fallback,
+  }) {
     for (final key in keys) {
       final value = data[key];
       if (value == null) continue;
       final text = value.toString().trim();
       if (text.isNotEmpty) return text;
     }
-    return null;
+    return fallback;
   }
 
   String _timeAgo(DateTime dateTime) {

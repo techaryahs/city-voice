@@ -1,20 +1,31 @@
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../../core/constants/app_colors.dart';
 
 class EditProfileSheet extends StatefulWidget {
   final String currentName;
   final String currentEmail;
   final String currentLocation;
-  final Function(String name, String email, String location) onProfileUpdated;
+  final String currentProfileImageUrl;
+  final Function(
+    String name,
+    String email,
+    String location,
+    String profileImageUrl,
+  ) onProfileUpdated;
 
   const EditProfileSheet({
     super.key,
     required this.currentName,
     required this.currentEmail,
     required this.currentLocation,
+    required this.currentProfileImageUrl,
     required this.onProfileUpdated,
   });
 
@@ -32,9 +43,12 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DatabaseReference _usersRef =
       FirebaseDatabase.instance.ref().child('users');
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   bool _obscurePassword = true;
   bool _isSaving = false;
+  File? _selectedImage;
+  late String _profileImageUrl;
 
   @override
   void initState() {
@@ -42,6 +56,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
     _nameController = TextEditingController(text: widget.currentName);
     _emailController = TextEditingController(text: widget.currentEmail);
     _locationController = TextEditingController(text: widget.currentLocation);
+    _profileImageUrl = widget.currentProfileImageUrl;
   }
 
   @override
@@ -52,6 +67,76 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
     _passwordController.dispose();
     _currentPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickProfileImage(ImageSource source) async {
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 82,
+        maxWidth: 900,
+      );
+      if (picked == null) return;
+
+      setState(() => _selectedImage = File(picked.path));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not pick profile picture')),
+      );
+    }
+  }
+
+  Future<void> _showPhotoSourceSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickProfileImage(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take a photo'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickProfileImage(ImageSource.camera);
+              },
+            ),
+            if (_selectedImage != null || _profileImageUrl.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Remove photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _selectedImage = null;
+                    _profileImageUrl = '';
+                  });
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String> _uploadSelectedImage(String uid) async {
+    final image = _selectedImage;
+    if (image == null) return _profileImageUrl;
+
+    final ref = _storage.ref().child(
+          'profile_images/$uid/${DateTime.now().millisecondsSinceEpoch}.jpg',
+        );
+    final task = await ref.putFile(image);
+    return task.ref.getDownloadURL();
   }
 
   Future<void> _saveChanges() async {
@@ -114,6 +199,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
       final locationParts = _locationController.text.trim().split(',');
       final address = locationParts.isNotEmpty ? locationParts.first.trim() : '';
       final pincode = locationParts.length > 1 ? locationParts.last.trim() : '';
+      final profileImageUrl = await _uploadSelectedImage(user.uid);
 
       // ── DATABASE UPDATE ──────────────────────
       await _usersRef.child(user.uid).update({
@@ -121,7 +207,11 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
         'address': address,
         'pincode': pincode,
         'email': _emailController.text.trim(),
+        'profileImageUrl': profileImageUrl,
       });
+      await user.updatePhotoURL(
+        profileImageUrl.isEmpty ? null : profileImageUrl,
+      );
 
       // ── EMAIL UPDATE ─────────────────────────
       if (_emailController.text.trim() != user.email) {
@@ -142,6 +232,7 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
         _nameController.text.trim(),
         _emailController.text.trim(),
         _locationController.text.trim(),
+        profileImageUrl,
       );
 
       if (mounted) {
@@ -223,6 +314,54 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
                 ),
               ),
               const SizedBox(height: 24),
+              GestureDetector(
+                onTap: _isSaving ? null : _showPhotoSourceSheet,
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 92,
+                      height: 92,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF0052D4), Color(0xFF4364F7)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _buildProfileImagePreview(),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt_outlined,
+                          color: Colors.white,
+                          size: 15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tap to change profile picture',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textMedium,
+                ),
+              ),
+              const SizedBox(height: 20),
               // NAME
               TextField(
                 controller: _nameController,
@@ -364,6 +503,37 @@ class _EditProfileSheetState extends State<EditProfileSheet> {
               const SizedBox(height: 10),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileImagePreview() {
+    final selected = _selectedImage;
+    if (selected != null) {
+      return Image.file(selected, fit: BoxFit.cover);
+    }
+
+    if (_profileImageUrl.isNotEmpty) {
+      return Image.network(
+        _profileImageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildInitialPreview(),
+      );
+    }
+
+    return _buildInitialPreview();
+  }
+
+  Widget _buildInitialPreview() {
+    final name = _nameController.text.trim();
+    return Center(
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: GoogleFonts.inter(
+          color: Colors.white,
+          fontSize: 34,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

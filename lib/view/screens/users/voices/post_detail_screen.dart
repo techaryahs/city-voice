@@ -28,6 +28,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   
   bool _isSubmitting = false;
   Set<String> _blockedUserIds = {};
+  final Map<String, String> _profileImageCache = {};
 
   @override
   void initState() {
@@ -86,10 +87,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       
       // 1. Fetch user name from DB or Auth
       final userSnap = await _dbRef.child('users').child(user.uid).get();
-      String userName = user.displayName ?? 'User';
+      String userName = user.displayName?.trim() ?? '';
       if (userSnap.exists) {
         final userData = Map<String, dynamic>.from(userSnap.value as Map);
-        userName = userData['name'] ?? userName;
+        userName = _firstText(
+          userData,
+          ['name', 'fullName', 'userName', 'displayName'],
+          fallback: userName,
+        );
+      }
+      if (userName.trim().isEmpty) {
+        userName = user.email?.split('@').first.trim() ?? 'Anonymous';
       }
 
       // 2. Push reply
@@ -120,6 +128,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  String _firstText(
+    Map<String, dynamic> data,
+    List<String> keys, {
+    String fallback = '',
+  }) {
+    for (final key in keys) {
+      final text = data[key]?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return fallback;
   }
 
   Future<void> _reportPost() async {
@@ -552,7 +572,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
-              _buildAvatar(widget.post.name),
+              _buildAvatar(widget.post.name, uid: widget.post.uid),
               const SizedBox(width: 12),
 
               Expanded(
@@ -820,57 +840,109 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildReplyTile(PostReply reply) {
+    final savedName = reply.name.trim();
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildAvatar(reply.name, size: 34, fontSize: 13),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: FutureBuilder<String>(
+        future: _resolveReplyUserName(reply),
+        initialData: _isGenericName(savedName) ? 'Loading...' : savedName,
+        builder: (context, snapshot) {
+          final displayName = snapshot.data?.trim().isNotEmpty == true
+              ? snapshot.data!.trim()
+              : 'Anonymous';
+
+          return Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAvatar(
+                  displayName,
+                  uid: reply.uid,
+                  size: 34,
+                  fontSize: 13,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        reply.name,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              displayName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _getTimeDisplay(reply.timestamp),
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: AppColors.textLight,
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 4),
                       Text(
-                        _getTimeDisplay(reply.timestamp),
+                        reply.text,
                         style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: AppColors.textLight,
+                          fontSize: 14,
+                          color: AppColors.textMedium,
+                          height: 1.5,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    reply.text,
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: AppColors.textMedium,
-                      height: 1.5,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
+  }
+
+  Future<String> _resolveReplyUserName(PostReply reply) async {
+    final savedName = reply.name.trim();
+    if (!_isGenericName(savedName)) return savedName;
+
+    final uid = reply.uid.trim();
+    if (uid.isEmpty) return savedName.isEmpty ? 'Anonymous' : savedName;
+
+    try {
+      final snap = await _dbRef.child('users').child(uid).get();
+      if (snap.value is Map) {
+        final userData = Map<String, dynamic>.from(snap.value as Map);
+        final resolvedName = _firstText(
+          userData,
+          ['name', 'fullName', 'userName', 'displayName', 'email'],
+        );
+        if (!_isGenericName(resolvedName)) return resolvedName;
+      }
+    } catch (_) {}
+
+    return savedName.isEmpty ? 'Anonymous' : savedName;
+  }
+
+  bool _isGenericName(String name) {
+    final normalized = name.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == 'user' ||
+        normalized == 'anonymous' ||
+        normalized == 'loading...';
   }
 
   Widget _buildInputArea() {
@@ -961,7 +1033,60 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Widget _buildAvatar(String name, {double size = 42, double fontSize = 16}) {
+  Widget _buildAvatar(
+    String name, {
+    String? uid,
+    double size = 42,
+    double fontSize = 16,
+  }) {
+    final userId = uid?.trim() ?? '';
+    if (userId.isNotEmpty) {
+      return FutureBuilder<String>(
+        future: _resolveProfileImageUrl(userId),
+        builder: (context, snapshot) {
+          final imageUrl = snapshot.data?.trim() ?? '';
+          return _buildAvatarContent(
+            name,
+            imageUrl: imageUrl,
+            size: size,
+            fontSize: fontSize,
+          );
+        },
+      );
+    }
+
+    return _buildAvatarContent(name, size: size, fontSize: fontSize);
+  }
+
+  Future<String> _resolveProfileImageUrl(String uid) async {
+    if (_profileImageCache.containsKey(uid)) {
+      return _profileImageCache[uid] ?? '';
+    }
+
+    try {
+      final snap = await _dbRef.child('users').child(uid).get();
+      if (snap.value is Map) {
+        final data = Map<String, dynamic>.from(snap.value as Map);
+        final imageUrl = _firstText(
+          data,
+          ['profileImageUrl', 'profile_image_url', 'photoUrl', 'photoURL'],
+        );
+        if (imageUrl.isNotEmpty) {
+          _profileImageCache[uid] = imageUrl;
+          return imageUrl;
+        }
+      }
+    } catch (_) {}
+    _profileImageCache[uid] = '';
+    return '';
+  }
+
+  Widget _buildAvatarContent(
+    String name, {
+    String imageUrl = '',
+    double size = 42,
+    double fontSize = 16,
+  }) {
     return Container(
       width: size,
       height: size,
@@ -973,15 +1098,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         shape: BoxShape.circle,
       ),
-      child: Center(
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: GoogleFonts.inter(
-            fontSize: fontSize,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      child: imageUrl.isNotEmpty
+          ? Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  _buildAvatarInitial(name, fontSize: fontSize),
+            )
+          : _buildAvatarInitial(name, fontSize: fontSize),
+    );
+  }
+
+  Widget _buildAvatarInitial(String name, {double fontSize = 16}) {
+    return Center(
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: GoogleFonts.inter(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
           ),
-        ),
       ),
     );
   }

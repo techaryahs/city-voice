@@ -85,20 +85,21 @@ class VoicePost {
     return {};
   }
 
-  // Reads the first non-empty text value from possible legacy field names.
-  static String _firstText(
-    Map<String, dynamic> data,
-    List<String> keys, {
-    String fallback = '',
-  }) {
-    for (final key in keys) {
-      final value = data[key];
-      if (value == null) continue;
-      final text = value.toString().trim();
-      if (text.isNotEmpty) return text;
-    }
-    return fallback;
+}
+
+// Reads the first non-empty text value from possible legacy field names.
+String _firstText(
+  Map<String, dynamic> data,
+  List<String> keys, {
+  String fallback = '',
+}) {
+  for (final key in keys) {
+    final value = data[key];
+    if (value == null) continue;
+    final text = value.toString().trim();
+    if (text.isNotEmpty) return text;
   }
+  return fallback;
 }
 
 class PostReply {
@@ -120,7 +121,11 @@ class PostReply {
     return PostReply(
       key: key,
       uid: data['uid'] ?? '',
-      name: data['name'] ?? 'Anonymous',
+      name: _firstText(
+        data,
+        ['name', 'fullName', 'userName', 'displayName', 'email'],
+        fallback: 'Anonymous',
+      ),
       text: data['text'] ?? '',
       timestamp: data['timestamp'] ?? '',
     );

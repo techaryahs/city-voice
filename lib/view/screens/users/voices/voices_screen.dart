@@ -190,6 +190,7 @@ class _VoicesScreenState extends State<VoicesScreen> {
   String _userLocation = 'Fetching location...';
   Set<String> _blockedUserIds = {};
   Set<String> _existingUserIds = {};
+  final Map<String, String> _profileImageCache = {};
   bool _hasLoadedUsers = false;
   StreamSubscription<DatabaseEvent>? _usersSubscription;
 
@@ -366,6 +367,7 @@ class _VoicesScreenState extends State<VoicesScreen> {
 CityVoice Issue
 
 ${post.description}
+Location: ${post.location}
 
 Support this voice on CityVoice app.
 ''';
@@ -1239,7 +1241,7 @@ Support this voice on CityVoice app.
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildAvatar(post.name),
+                  _buildAvatar(post.name, uid: post.uid),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -1595,7 +1597,7 @@ Support this voice on CityVoice app.
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               child: Row(
                 children: [
-                  _buildAvatar(post.name),
+                  _buildAvatar(post.name, uid: post.uid),
                   const SizedBox(width: 12),
 
                   Expanded(
@@ -1905,7 +1907,49 @@ Support this voice on CityVoice app.
     );
   }
 
-  Widget _buildAvatar(String name) {
+  Widget _buildAvatar(String name, {String? uid}) {
+    final userId = uid?.trim() ?? '';
+    if (userId.isNotEmpty) {
+      return FutureBuilder<String>(
+        future: _resolveProfileImageUrl(userId),
+        builder: (context, snapshot) {
+          final imageUrl = snapshot.data?.trim() ?? '';
+          return _buildAvatarContent(name, imageUrl: imageUrl);
+        },
+      );
+    }
+
+    return _buildAvatarContent(name);
+  }
+
+  Future<String> _resolveProfileImageUrl(String uid) async {
+    if (_profileImageCache.containsKey(uid)) {
+      return _profileImageCache[uid] ?? '';
+    }
+
+    try {
+      final snapshot = await _usersRef.child(uid).get();
+      if (snapshot.value is Map) {
+        final data = Map<String, dynamic>.from(snapshot.value as Map);
+        for (final key in [
+          'profileImageUrl',
+          'profile_image_url',
+          'photoUrl',
+          'photoURL',
+        ]) {
+          final url = data[key]?.toString().trim() ?? '';
+          if (url.isNotEmpty) {
+            _profileImageCache[uid] = url;
+            return url;
+          }
+        }
+      }
+    } catch (_) {}
+    _profileImageCache[uid] = '';
+    return '';
+  }
+
+  Widget _buildAvatarContent(String name, {String imageUrl = ''}) {
     return Container(
       width: 36, height: 36,
       decoration: const BoxDecoration(
@@ -1916,15 +1960,26 @@ Support this voice on CityVoice app.
         ),
         shape: BoxShape.circle,
       ),
-      child: Center(
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      child: imageUrl.isNotEmpty
+          ? Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _buildAvatarInitial(name),
+            )
+          : _buildAvatarInitial(name),
+    );
+  }
+
+  Widget _buildAvatarInitial(String name) {
+    return Center(
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
           ),
-        ),
       ),
     );
   }
