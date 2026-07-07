@@ -191,9 +191,6 @@ class _VoicesScreenState extends State<VoicesScreen> {
   final Map<String, XFile> _shareImageCache = {};
   bool _hasLoadedUsers = false;
   StreamSubscription<DatabaseEvent>? _usersSubscription;
-  Future<List<VoicePost>>? _visiblePostsFuture;
-  String _visiblePostsKey = '';
-  List<VoicePost>? _lastVisiblePosts;
   bool _isSharing = false;
 
   String _searchQuery = '';
@@ -244,6 +241,16 @@ class _VoicesScreenState extends State<VoicesScreen> {
         for (final entry in users.entries) {
           if (_isVisibleUserRecord(entry.value)) {
             existingUsers.add(entry.key);
+            if (entry.value is Map) {
+              final userData = Map<String, dynamic>.from(entry.value as Map);
+              final imageUrl = _firstText(
+                userData,
+                ['profileImageUrl', 'profile_image_url', 'photoUrl', 'photoURL'],
+              );
+              if (imageUrl.isNotEmpty) {
+                _profileImageCache[entry.key] = imageUrl;
+              }
+            }
           }
         }
 
@@ -303,46 +310,12 @@ class _VoicesScreenState extends State<VoicesScreen> {
         !hiddenStatuses.contains(status);
   }
 
-  Future<List<VoicePost>> _filterVisibleOwnerPosts(
-    List<VoicePost> posts,
-  ) async {
-    final filtered = <VoicePost>[];
-
-    for (final post in posts) {
-      final ownerUid = post.uid.trim();
-      if (ownerUid.isEmpty) continue;
-
-      if (_existingUserIds.contains(ownerUid)) {
-        filtered.add(post);
-        continue;
-      }
-
-      try {
-        final ownerSnapshot = await _usersRef.child(ownerUid).get();
-        if (ownerSnapshot.exists && _isVisibleUserRecord(ownerSnapshot.value)) {
-          filtered.add(post);
-        }
-      } catch (_) {
-        // If rules block this lookup, do not hide valid community posts.
-        filtered.add(post);
-      }
+  String _firstText(Map<String, dynamic> data, List<String> keys) {
+    for (final key in keys) {
+      final text = data[key]?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
     }
-
-    return filtered;
-  }
-
-  Future<List<VoicePost>> _visiblePostsFor(List<VoicePost> posts) {
-    final key = posts.map((post) => '${post.key}:${post.timestamp}').join('|');
-    if (_visiblePostsFuture != null && key == _visiblePostsKey) {
-      return _visiblePostsFuture!;
-    }
-
-    _visiblePostsKey = key;
-    _visiblePostsFuture = _filterVisibleOwnerPosts(posts).then((visiblePosts) {
-      _lastVisiblePosts = visiblePosts;
-      return visiblePosts;
-    });
-    return _visiblePostsFuture!;
+    return '';
   }
 
   // ── Support toggle ──────────────────────────────────────────────────────────
@@ -819,54 +792,40 @@ Support this voice on CityVoice app.
                             final isBlockedUser =
                                 post.uid != _currentUid &&
                                 _blockedUserIds.contains(post.uid);
+                            final isDeletedUser = _hasLoadedUsers &&
+                                (post.uid.trim().isEmpty ||
+                                    !_existingUserIds.contains(post.uid));
 
                             return matchesSearch &&
                                 matchesCategory &&
-                                !isBlockedUser;
+                                !isBlockedUser &&
+                                !isDeletedUser;
                           })
                           .toList()
                         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-                  return FutureBuilder<List<VoicePost>>(
-                    future: _visiblePostsFor(posts),
-                    initialData: _lastVisiblePosts ?? posts,
-                    builder: (context, ownerSnapshot) {
-                      final visiblePosts =
-                          ownerSnapshot.data ?? _lastVisiblePosts ?? posts;
-                      if (ownerSnapshot.connectionState ==
-                              ConnectionState.waiting &&
-                          !ownerSnapshot.hasData) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                          ),
-                        );
-                      }
+                  if (posts.isEmpty) {
+                    return _buildEmptyState(
+                      icon: Icons.campaign_outlined,
+                      title: 'No voices yet',
+                      subtitle: 'No active community voices to show.',
+                    );
+                  }
 
-                      if (visiblePosts.isEmpty) {
-                        return _buildEmptyState(
-                          icon: Icons.campaign_outlined,
-                          title: 'No voices yet',
-                          subtitle: 'No active community voices to show.',
-                        );
-                      }
-
-                      return ListView.builder(
-                        key: const PageStorageKey<String>('voices-feed-list'),
-                        controller: _feedScrollController,
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          8,
-                          16,
-                          MediaQuery.of(context).orientation ==
-                                  Orientation.landscape
-                              ? 76
-                              : 100,
-                        ),
-                        itemCount: visiblePosts.length,
-                        itemBuilder: (_, i) => _buildPostCard(visiblePosts[i]),
-                      );
-                    },
+                  return ListView.builder(
+                    key: const PageStorageKey<String>('voices-feed-list'),
+                    controller: _feedScrollController,
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      8,
+                      16,
+                      MediaQuery.of(context).orientation ==
+                              Orientation.landscape
+                          ? 76
+                          : 100,
+                    ),
+                    itemCount: posts.length,
+                    itemBuilder: (_, i) => _buildPostCard(posts[i]),
                   );
                 },
               ),
@@ -1986,6 +1945,9 @@ Support this voice on CityVoice app.
           name,
           imageUrl: _profileImageCache[userId] ?? '',
         );
+      }
+      if (_hasLoadedUsers) {
+        return _buildAvatarContent(name);
       }
 
       return FutureBuilder<String>(
