@@ -50,10 +50,7 @@ class _Skyline extends StatelessWidget {
   final double width;
   final double height;
 
-  const _Skyline({
-    required this.width,
-    required this.height,
-  });
+  const _Skyline({required this.width, required this.height});
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +181,7 @@ class VoicesScreen extends StatefulWidget {
 }
 
 class _VoicesScreenState extends State<VoicesScreen> {
-  final _postsRef  = FirebaseDatabase.instance.ref('posts');
+  final _postsRef = FirebaseDatabase.instance.ref('posts');
   final _usersRef = FirebaseDatabase.instance.ref('users');
   String get _currentUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String _userLocation = 'Fetching location...';
@@ -362,13 +359,16 @@ class _VoicesScreenState extends State<VoicesScreen> {
       _showBlockedNotice();
       return;
     }
-
-    final shareText = '''
+    const playStoreLink =
+        'https://play.google.com/store/apps/details?id=com.amit.cityvoice';
+    final shareText =
+        '''
 CityVoice Issue
 
 ${post.description}
 Location: ${post.location}
 
+Download CityVoice: $playStoreLink
 Support this voice on CityVoice app.
 ''';
 
@@ -383,10 +383,7 @@ Support this voice on CityVoice app.
       );
     } catch (_) {
       await SharePlus.instance.share(
-        ShareParams(
-          text: shareText,
-          subject: 'CityVoice Issue',
-        ),
+        ShareParams(text: shareText, subject: 'CityVoice Issue'),
       );
     }
   }
@@ -471,8 +468,9 @@ Support this voice on CityVoice app.
 
     if (reason == null) return;
 
-    final reportReason =
-        reason == 'Other' ? await _showOtherReportDialog() : reason;
+    final reportReason = reason == 'Other'
+        ? await _showOtherReportDialog()
+        : reason;
 
     if (reportReason == null || reportReason.trim().isEmpty) return;
 
@@ -486,8 +484,10 @@ Support this voice on CityVoice app.
         return;
       }
 
-      final userSnap =
-          await FirebaseDatabase.instance.ref('users').child(_currentUid).get();
+      final userSnap = await FirebaseDatabase.instance
+          .ref('users')
+          .child(_currentUid)
+          .get();
       final userData = userSnap.value is Map
           ? Map<String, dynamic>.from(userSnap.value as Map)
           : <String, dynamic>{};
@@ -514,9 +514,7 @@ Support this voice on CityVoice app.
           .child(post.key)
           .set(reportData);
 
-      await postRef.update({
-        'reportCount': ServerValue.increment(1),
-      });
+      await postRef.update({'reportCount': ServerValue.increment(1)});
 
       _showSnack('Post reported and added to your profile.');
     } catch (e) {
@@ -569,8 +567,10 @@ Support this voice on CityVoice app.
 
     if (confirmed != true) return;
 
-    final ref =
-        _usersRef.child(currentUid).child('blockedUsers').child(post.uid);
+    final ref = _usersRef
+        .child(currentUid)
+        .child('blockedUsers')
+        .child(post.uid);
     final mirrorRef = FirebaseDatabase.instance
         .ref('userBlocks')
         .child(currentUid)
@@ -626,9 +626,7 @@ Support this voice on CityVoice app.
           maxLines: 5,
           decoration: InputDecoration(
             hintText: 'Write why you are reporting this post...',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         actions: [
@@ -653,20 +651,18 @@ Support this voice on CityVoice app.
 
   void _showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _getUserLocation() async {
     try {
-      bool serviceEnabled =
-      await Geolocator.isLocationServiceEnabled();
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
       if (!serviceEnabled) return;
 
-      LocationPermission permission =
-      await Geolocator.checkPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -689,8 +685,7 @@ Support this voice on CityVoice app.
         final place = placemarks.first;
 
         setState(() {
-          _userLocation =
-          '${place.locality}, ${place.administrativeArea}';
+          _userLocation = '${place.locality}, ${place.administrativeArea}';
         });
       }
     } catch (e) {
@@ -717,7 +712,9 @@ Support this voice on CityVoice app.
                   // ── Loading ──────────────────────────────────────────────
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
-                      child: CircularProgressIndicator(color: AppColors.primary),
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
+                      ),
                     );
                   }
 
@@ -736,67 +733,66 @@ Support this voice on CityVoice app.
                     return _buildEmptyState(
                       icon: Icons.campaign_outlined,
                       title: 'No voices yet',
-                      subtitle: 'Be the first to raise a voice\nin your community!',
+                      subtitle:
+                          'Be the first to raise a voice\nin your community!',
                     );
                   }
 
                   // ── Parse posts (newest first) ───────────────────────────
-                  final raw    = Map<String, dynamic>.from(event.snapshot.value as Map);
-                  final posts = raw.entries
-                      .map((e) => VoicePost.fromSnapshot(
-                    event.snapshot.child(e.key),
-                  ))
-                      .where((post) {
+                  final raw = Map<String, dynamic>.from(
+                    event.snapshot.value as Map,
+                  );
+                  final posts =
+                      raw.entries
+                          .map(
+                            (e) => VoicePost.fromSnapshot(
+                              event.snapshot.child(e.key),
+                            ),
+                          )
+                          .where((post) {
+                            // ── SEARCH FILTER ───────────────────
 
-                    // ── SEARCH FILTER ───────────────────
+                            final matchesSearch =
+                                post.description.toLowerCase().contains(
+                                  _searchQuery,
+                                ) ||
+                                post.category.toLowerCase().contains(
+                                  _searchQuery,
+                                ) ||
+                                post.location.toLowerCase().contains(
+                                  _searchQuery,
+                                );
 
-                    final matchesSearch =
+                            // ── CATEGORY FILTER ─────────────────
 
-                        post.description
-                            .toLowerCase()
-                            .contains(_searchQuery)
+                            final category = post.category.toLowerCase();
+                            final visibleCategories = {
+                              'roads',
+                              'garbage',
+                              'street lights',
+                              'water',
+                              'garden & trees',
+                              'footpath',
+                              'public toilets',
+                              'other',
+                            };
+                            final matchesCategory =
+                                _selectedCategory == 'All' ||
+                                (_selectedCategory == 'More'
+                                    ? !visibleCategories.contains(category)
+                                    : category ==
+                                          _selectedCategory.toLowerCase());
 
-                            ||
+                            final isBlockedUser =
+                                post.uid != _currentUid &&
+                                _blockedUserIds.contains(post.uid);
 
-                            post.category
-                                .toLowerCase()
-                                .contains(_searchQuery)
-
-                            ||
-
-                            post.location
-                                .toLowerCase()
-                                .contains(_searchQuery);
-
-                    // ── CATEGORY FILTER ─────────────────
-
-                    final category = post.category.toLowerCase();
-                    final visibleCategories = {
-                      'roads',
-                      'garbage',
-                      'street lights',
-                      'water',
-                      'garden & trees',
-                      'footpath',
-                      'public toilets',
-                      'other',
-                    };
-                    final matchesCategory = _selectedCategory == 'All' ||
-                        (_selectedCategory == 'More'
-                            ? !visibleCategories.contains(category)
-                            : category == _selectedCategory.toLowerCase());
-
-                    final isBlockedUser = post.uid != _currentUid &&
-                        _blockedUserIds.contains(post.uid);
-
-                    return matchesSearch &&
-                        matchesCategory &&
-                        !isBlockedUser;
-                  })
-                      .toList()
-
-                    ..sort((a, b) =>
-                        b.timestamp.compareTo(a.timestamp));
+                            return matchesSearch &&
+                                matchesCategory &&
+                                !isBlockedUser;
+                          })
+                          .toList()
+                        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
                   return FutureBuilder<List<VoicePost>>(
                     future: _filterVisibleOwnerPosts(posts),
@@ -922,7 +918,6 @@ Support this voice on CityVoice app.
   }
 
   Widget _buildSearchAndFilters() {
-
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF8FBFF),
@@ -938,9 +933,7 @@ Support this voice on CityVoice app.
 
       child: Column(
         children: [
-
           // ── SEARCH BAR ───────────────────────────
-
           if (_isSearching) ...[
             _buildSearchField(),
             const SizedBox(height: 10),
@@ -951,7 +944,6 @@ Support this voice on CityVoice app.
           const SizedBox(height: 14),
 
           // ── CATEGORY FILTERS ─────────────────────
-
           SizedBox(
             height: 70,
 
@@ -960,20 +952,15 @@ Support this voice on CityVoice app.
 
               itemCount: _categories.length,
 
-              separatorBuilder: (_, __) =>
-              const SizedBox(width: 10),
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
 
               itemBuilder: (_, index) {
-
                 final category = _categories[index];
 
-                final isSelected =
-                    _selectedCategory == category;
+                final isSelected = _selectedCategory == category;
 
                 return GestureDetector(
-
                   onTap: () {
-
                     setState(() {
                       _selectedCategory = category;
                     });
@@ -1055,7 +1042,11 @@ Support this voice on CityVoice app.
       ),
       child: Row(
         children: [
-          const Icon(Icons.location_on_rounded, color: Color(0xFF2F6BFF), size: 20),
+          const Icon(
+            Icons.location_on_rounded,
+            color: Color(0xFF2F6BFF),
+            size: 20,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1069,12 +1060,20 @@ Support this voice on CityVoice app.
               ),
             ),
           ),
-          const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF9AA1B0), size: 18),
+          const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: Color(0xFF9AA1B0),
+            size: 18,
+          ),
           const SizedBox(width: 10),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.my_location_rounded, color: Color(0xFF2F6BFF), size: 17),
+              const Icon(
+                Icons.my_location_rounded,
+                color: Color(0xFF2F6BFF),
+                size: 17,
+              ),
               const SizedBox(width: 5),
               Text(
                 'Near Me',
@@ -1181,8 +1180,11 @@ Support this voice on CityVoice app.
               ),
             ],
           ),
-          child: const Icon(Icons.notifications_outlined,
-              color: Color(0xFF3A3F4B), size: 19),
+          child: const Icon(
+            Icons.notifications_outlined,
+            color: Color(0xFF3A3F4B),
+            size: 19,
+          ),
         ),
         if (badgeCount > 0)
           Positioned(
@@ -1221,228 +1223,224 @@ Support this voice on CityVoice app.
     final hasSupported = post.supportedBy.containsKey(_currentUid);
 
     return Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF141E3C).withOpacity(0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildAvatar(post.name, uid: post.uid),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          post.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textDark,
-                          ),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF141E3C).withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAvatar(post.name, uid: post.uid),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark,
                         ),
-                        Text(
-                          _getTimeAgo(post.timestamp),
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: const Color(0xFF667085),
-                          ),
+                      ),
+                      Text(
+                        _getTimeAgo(post.timestamp),
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF667085),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  _buildCategoryBadge(post.category, catColor, catBg),
-                  const SizedBox(width: 8),
-                  _buildStatusBadge(post.status),
-                ],
+                ),
+                _buildCategoryBadge(post.category, catColor, catBg),
+                const SizedBox(width: 8),
+                _buildStatusBadge(post.status),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: ReadMoreText(
+              post.description,
+              trimLines: 2,
+              trimMode: TrimMode.Line,
+              trimCollapsedText: ' See more',
+              trimExpandedText: ' Show less',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                color: const Color(0xFF111827),
+                height: 1.45,
+              ),
+              moreStyle: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+              lessStyle: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
               ),
             ),
+          ),
+          if (post.imageUrl.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-              child: ReadMoreText(
-                post.description,
-                trimLines: 2,
-                trimMode: TrimMode.Line,
-                trimCollapsedText: ' See more',
-                trimExpandedText: ' Show less',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: const Color(0xFF111827),
-                  height: 1.45,
-                ),
-                moreStyle: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
-                ),
-                lessStyle: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
-            if (post.imageUrl.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    post.imageUrl,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  post.imageUrl,
+                  height: 150,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : Container(
+                          height: 150,
+                          color: AppColors.background,
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.primary,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                  errorBuilder: (_, __, ___) => Container(
                     height: 150,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (_, child, progress) =>
-                        progress == null
-                            ? child
-                            : Container(
-                                height: 150,
-                                color: AppColors.background,
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.primary,
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              ),
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 150,
-                      color: AppColors.background,
-                      child: const Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
-                          color: AppColors.textLight,
-                          size: 32,
-                        ),
+                    color: AppColors.background,
+                    child: const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: AppColors.textLight,
+                        size: 32,
                       ),
                     ),
                   ),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.location_on_rounded,
-                    size: 14,
-                    color: Color(0xFF667085),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.location_on_rounded,
+                  size: 14,
+                  color: Color(0xFF667085),
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    post.location,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF667085),
+                    ),
                   ),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(
-                      post.location,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF667085),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0xFFF0F3F8))),
+            ),
+            child: Row(
+              children: [
+                _buildPostAction(
+                  icon: hasSupported
+                      ? Icons.thumb_up_alt_rounded
+                      : Icons.thumb_up_alt_outlined,
+                  label: 'Support',
+                  count: _formatCount(post.supports),
+                  color: hasSupported
+                      ? AppColors.primary
+                      : const Color(0xFF202A3A),
+                  onTap: widget.readOnly ? null : () => _toggleSupport(post),
+                ),
+                _buildActionDivider(),
+                _buildPostAction(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: 'Respond',
+                  count: _formatCount(post.replies),
+                  color: const Color(0xFF202A3A),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (c) => PostDetailScreen(
+                        post: post,
+                        readOnly: widget.readOnly,
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
-            Container(
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFF0F3F8))),
-              ),
-              child: Row(
-                children: [
+                ),
+                if (!widget.readOnly) _buildActionDivider(),
+                if (!widget.readOnly)
                   _buildPostAction(
-                    icon: hasSupported
-                        ? Icons.thumb_up_alt_rounded
-                        : Icons.thumb_up_alt_outlined,
-                    label: 'Support',
-                    count: _formatCount(post.supports),
-                    color:
-                        hasSupported ? AppColors.primary : const Color(0xFF202A3A),
-                    onTap: widget.readOnly ? null : () => _toggleSupport(post),
-                  ),
-                  _buildActionDivider(),
-                  _buildPostAction(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    label: 'Respond',
-                    count: _formatCount(post.replies),
+                    icon: Icons.share_outlined,
+                    label: 'Share',
+                    count: '',
                     color: const Color(0xFF202A3A),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (c) => PostDetailScreen(
-                          post: post,
-                          readOnly: widget.readOnly,
-                        ),
-                      ),
-                    ),
+                    onTap: () => _sharePost(post),
                   ),
-                  if (!widget.readOnly) _buildActionDivider(),
-                  if (!widget.readOnly)
-                    _buildPostAction(
-                      icon: Icons.share_outlined,
-                      label: 'Share',
-                      count: '',
-                      color: const Color(0xFF202A3A),
-                      onTap: () => _sharePost(post),
-                    ),
-                  if (!widget.readOnly) _buildActionDivider(),
-                  if (!widget.readOnly)
-                    _buildPostAction(
-                      icon: Icons.flag_outlined,
-                      label: 'Report',
-                      count: '',
-                      color: const Color(0xFFE53935),
-                      onTap: () => _reportPost(post),
-                    ),
-                  if (!widget.readOnly &&
-                      post.uid.isNotEmpty &&
-                      post.uid != _currentUid)
-                    _buildActionDivider(),
-                  if (!widget.readOnly &&
-                      post.uid.isNotEmpty &&
-                      post.uid != _currentUid)
-                    _buildPostAction(
-                      icon: _blockedUserIds.contains(post.uid)
-                          ? Icons.person_add_alt_1_outlined
-                          : Icons.block_rounded,
-                      label: _blockedUserIds.contains(post.uid)
-                          ? 'Unblock'
-                          : 'Block',
-                      count: '',
-                      color: const Color(0xFF202A3A),
-                      onTap: () => _toggleBlockUser(post),
-                    ),
-                ],
-              ),
+                if (!widget.readOnly) _buildActionDivider(),
+                if (!widget.readOnly)
+                  _buildPostAction(
+                    icon: Icons.flag_outlined,
+                    label: 'Report',
+                    count: '',
+                    color: const Color(0xFFE53935),
+                    onTap: () => _reportPost(post),
+                  ),
+                if (!widget.readOnly &&
+                    post.uid.isNotEmpty &&
+                    post.uid != _currentUid)
+                  _buildActionDivider(),
+                if (!widget.readOnly &&
+                    post.uid.isNotEmpty &&
+                    post.uid != _currentUid)
+                  _buildPostAction(
+                    icon: _blockedUserIds.contains(post.uid)
+                        ? Icons.person_add_alt_1_outlined
+                        : Icons.block_rounded,
+                    label: _blockedUserIds.contains(post.uid)
+                        ? 'Unblock'
+                        : 'Block',
+                    count: '',
+                    color: const Color(0xFF202A3A),
+                    onTap: () => _toggleBlockUser(post),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildActionDivider() {
-    return Container(
-      width: 1,
-      height: 34,
-      color: const Color(0xFFEFF3F8),
-    );
+    return Container(width: 1, height: 34, color: const Color(0xFFEFF3F8));
   }
 
   Widget _buildCategoryBadge(String category, Color color, Color bgColor) {
@@ -1489,7 +1487,9 @@ Support this voice on CityVoice app.
           Icon(
             Icons.circle,
             size: 7,
-            color: isResolved ? const Color(0xFF1E9E57) : const Color(0xFFE69500),
+            color: isResolved
+                ? const Color(0xFF1E9E57)
+                : const Color(0xFFE69500),
           ),
           const SizedBox(width: 6),
           Text(
@@ -1497,7 +1497,9 @@ Support this voice on CityVoice app.
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w800,
-              color: isResolved ? const Color(0xFF1E9E57) : const Color(0xFFE69500),
+              color: isResolved
+                  ? const Color(0xFF1E9E57)
+                  : const Color(0xFFE69500),
             ),
           ),
         ],
@@ -1570,10 +1572,8 @@ Support this voice on CityVoice app.
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (c) => PostDetailScreen(
-            post: post,
-            readOnly: widget.readOnly,
-          ),
+          builder: (c) =>
+              PostDetailScreen(post: post, readOnly: widget.readOnly),
         ),
       ),
       child: Container(
@@ -1615,8 +1615,11 @@ Support this voice on CityVoice app.
                         const SizedBox(height: 3),
                         Row(
                           children: [
-                            Icon(Icons.location_on_outlined,
-                                size: 11, color: AppColors.textLight),
+                            Icon(
+                              Icons.location_on_outlined,
+                              size: 11,
+                              color: AppColors.textLight,
+                            ),
                             const SizedBox(width: 2),
                             Expanded(
                               child: Text(
@@ -1636,8 +1639,10 @@ Support this voice on CityVoice app.
 
                   // ── Category badge ─────────────────────────────
                   Container(
-                    padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: catBg,
                       borderRadius: BorderRadius.circular(100),
@@ -1688,25 +1693,27 @@ Support this voice on CityVoice app.
                 height: 190,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                loadingBuilder: (_, child, progress) =>
-                progress == null
+                loadingBuilder: (_, child, progress) => progress == null
                     ? child
                     : Container(
-                  height: 190,
-                  color: AppColors.background,
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primary,
-                      strokeWidth: 2,
-                    ),
-                  ),
-                ),
+                        height: 190,
+                        color: AppColors.background,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      ),
                 errorBuilder: (_, __, ___) => Container(
                   height: 100,
                   color: AppColors.background,
                   child: const Center(
-                    child: Icon(Icons.broken_image_outlined,
-                        color: AppColors.textLight, size: 32),
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: AppColors.textLight,
+                      size: 32,
+                    ),
                   ),
                 ),
               ),
@@ -1744,7 +1751,6 @@ Support this voice on CityVoice app.
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
               child: Row(
                 children: [
-
                   // ❤️ SUPPORT
                   GestureDetector(
                     onTap: widget.readOnly ? null : () => _toggleSupport(post),
@@ -1897,7 +1903,6 @@ Support this voice on CityVoice app.
                         ),
                       ),
                     ),
-
                 ],
               ),
             ),
@@ -1951,7 +1956,8 @@ Support this voice on CityVoice app.
 
   Widget _buildAvatarContent(String name, {String imageUrl = ''}) {
     return Container(
-      width: 36, height: 36,
+      width: 36,
+      height: 36,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFF2F6BFF), Color(0xFF1E4FD6)],
@@ -1979,7 +1985,7 @@ Support this voice on CityVoice app.
           fontSize: 16,
           fontWeight: FontWeight.w700,
           color: Colors.white,
-          ),
+        ),
       ),
     );
   }
@@ -2029,7 +2035,8 @@ Support this voice on CityVoice app.
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 72, height: 72,
+            width: 72,
+            height: 72,
             decoration: const BoxDecoration(
               color: AppColors.communityBg,
               shape: BoxShape.circle,
@@ -2059,6 +2066,7 @@ Support this voice on CityVoice app.
       ),
     );
   }
+
   String _getTimeAgo(String timestamp) {
     try {
       final dt = DateTime.parse(timestamp);
