@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -15,25 +18,25 @@ import 'package:geocoding/geocoding.dart';
 Color _catColor(String cat) {
   switch (cat.toLowerCase()) {
     case 'roads':
-      return AppColors.primary;
+      return const Color(0xFF1E4FD6);
 
     case 'footpath':
-      return const Color(0xFF8E44AD);
+      return const Color(0xFF5B6274);
 
     case 'public toilets':
       return const Color(0xFF16A085);
 
     case 'garbage':
-      return const Color(0xFF2ECC71);
+      return const Color(0xFF1FAE6E);
 
     case 'garden & trees':
       return const Color(0xFF27AE60);
 
     case 'water':
-      return const Color(0xFF4A7BE8);
+      return const Color(0xFF2F6BFF);
 
     case 'street lights':
-      return const Color(0xFFF39C12);
+      return const Color(0xFF1E4FD6);
 
     case 'other':
       return const Color(0xFF7F8C8D);
@@ -43,10 +46,100 @@ Color _catColor(String cat) {
   }
 }
 
+class _Skyline extends StatelessWidget {
+  final double width;
+  final double height;
+
+  const _Skyline({
+    required this.width,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: 0.55,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: CustomPaint(painter: _SkylinePainter()),
+      ),
+    );
+  }
+}
+
+class _SkylinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0xFFBDD8FF);
+    final softPaint = Paint()..color = const Color(0xFFD7E8FF);
+    final birdPaint = Paint()
+      ..color = const Color(0xFF9BBFF2)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.3
+      ..strokeCap = StrokeCap.round;
+
+    final ground = size.height * 0.86;
+    final unit = size.width / 14;
+    final buildings = <Rect>[
+      Rect.fromLTWH(unit * 5.0, ground - 20, unit * 0.9, 20),
+      Rect.fromLTWH(unit * 6.0, ground - 45, unit * 1.2, 45),
+      Rect.fromLTWH(unit * 7.45, ground - 58, unit * 1.0, 58),
+      Rect.fromLTWH(unit * 8.8, ground - 32, unit * 1.0, 32),
+      Rect.fromLTWH(unit * 10.0, ground - 50, unit * 1.1, 50),
+      Rect.fromLTWH(unit * 11.35, ground - 28, unit * 0.85, 28),
+    ];
+
+    canvas.drawCircle(Offset(unit * 4.1, ground - 46), 3.2, softPaint);
+    canvas.drawCircle(Offset(unit * 5.8, ground - 60), 2.2, softPaint);
+
+    for (final rect in buildings) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+        paint,
+      );
+      for (double y = rect.top + 9; y < rect.bottom - 3; y += 11) {
+        canvas.drawRect(
+          Rect.fromLTWH(rect.left + rect.width * 0.25, y, 2, 3),
+          softPaint,
+        );
+        canvas.drawRect(
+          Rect.fromLTWH(rect.left + rect.width * 0.58, y, 2, 3),
+          softPaint,
+        );
+      }
+    }
+
+    final base = Paint()
+      ..color = const Color(0xFFE2F0FF)
+      ..strokeWidth = 2;
+    canvas.drawLine(
+      Offset(unit * 4.5, ground),
+      Offset(unit * 12.6, ground),
+      base,
+    );
+
+    void drawBird(double x, double y, double scale) {
+      final path = Path()
+        ..moveTo(x, y)
+        ..quadraticBezierTo(x + 4 * scale, y - 4 * scale, x + 8 * scale, y)
+        ..moveTo(x + 8 * scale, y)
+        ..quadraticBezierTo(x + 12 * scale, y - 4 * scale, x + 16 * scale, y);
+      canvas.drawPath(path, birdPaint);
+    }
+
+    drawBird(unit * 3.2, size.height * 0.32, 0.45);
+    drawBird(unit * 4.3, size.height * 0.23, 0.35);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 Color _catBg(String cat) {
   switch (cat.toLowerCase()) {
     case 'roads':
-      return const Color(0xFFFFF0EE);
+      return const Color(0xFFE9F0FF);
 
     case 'footpath':
       return const Color(0xFFF5EEFF);
@@ -55,16 +148,16 @@ Color _catBg(String cat) {
       return const Color(0xFFEEFFFB);
 
     case 'garbage':
-      return const Color(0xFFEEFBF4);
+      return const Color(0xFFE5F7EE);
 
     case 'garden & trees':
       return const Color(0xFFEFFAF1);
 
     case 'water':
-      return const Color(0xFFEEF4FF);
+      return const Color(0xFFE9F0FF);
 
     case 'street lights':
-      return const Color(0xFFFFFAEE);
+      return const Color(0xFFE9F0FF);
 
     case 'other':
       return const Color(0xFFF4F4F4);
@@ -78,8 +171,13 @@ Color _catBg(String cat) {
 
 class VoicesScreen extends StatefulWidget {
   final bool readOnly;
+  final int updatesBadgeCount;
 
-  const VoicesScreen({super.key, this.readOnly = false});
+  const VoicesScreen({
+    super.key,
+    this.readOnly = false,
+    this.updatesBadgeCount = 0,
+  });
 
   @override
   State<VoicesScreen> createState() => _VoicesScreenState();
@@ -91,23 +189,26 @@ class _VoicesScreenState extends State<VoicesScreen> {
   String get _currentUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String _userLocation = 'Fetching location...';
   Set<String> _blockedUserIds = {};
-
-  final TextEditingController _searchController =
-  TextEditingController();
+  Set<String> _existingUserIds = {};
+  bool _hasLoadedUsers = false;
+  StreamSubscription<DatabaseEvent>? _usersSubscription;
 
   String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _feedScrollController = ScrollController();
+  bool _isSearching = false;
 
   String _selectedCategory = 'All';
 
   final List<String> _categories = [
     'All',
     'Roads',
+    'Garbage',
+    'Street Lights',
+    'Water',
+    'Garden & Trees',
     'Footpath',
     'Public Toilets',
-    'Garbage',
-    'Garden & Trees',
-    'Water',
-    'Street Lights',
     'Other',
   ];
 
@@ -115,27 +216,116 @@ class _VoicesScreenState extends State<VoicesScreen> {
   void initState() {
     super.initState();
     _getUserLocation();
-    _listenToBlockedUsers();
+    _listenToUsers();
   }
 
-  void _listenToBlockedUsers() {
+  @override
+  void dispose() {
+    _usersSubscription?.cancel();
+    _searchController.dispose();
+    _feedScrollController.dispose();
+    super.dispose();
+  }
+
+  void _listenToUsers() {
     final currentUid = _currentUid;
     if (currentUid.isEmpty) return;
 
-    _usersRef.child(currentUid).child('blockedUsers').onValue.listen((event) {
+    _usersSubscription = _usersRef.onValue.listen((event) {
+      final existingUsers = <String>{};
       final blocked = <String>{};
-      if (event.snapshot.value is Map) {
-        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
-        for (final entry in data.entries) {
-          if (entry.value == true || entry.value is Map) {
-            blocked.add(entry.key);
+      final hasUsersMap = event.snapshot.value is Map;
+
+      if (hasUsersMap) {
+        final users = Map<String, dynamic>.from(event.snapshot.value as Map);
+        for (final entry in users.entries) {
+          if (_isVisibleUserRecord(entry.value)) {
+            existingUsers.add(entry.key);
+          }
+        }
+
+        final currentUser = users[currentUid];
+        final blockedData = currentUser is Map
+            ? Map<String, dynamic>.from(currentUser)['blockedUsers']
+            : null;
+        if (blockedData is Map) {
+          final data = Map<String, dynamic>.from(blockedData);
+          for (final entry in data.entries) {
+            if (entry.value == true || entry.value is Map) {
+              blocked.add(entry.key);
+            }
           }
         }
       }
+
       if (mounted) {
-        setState(() => _blockedUserIds = blocked);
+        setState(() {
+          _existingUserIds = existingUsers;
+          _blockedUserIds = blocked;
+          _hasLoadedUsers = hasUsersMap;
+        });
       }
     });
+  }
+
+  Map<String, dynamic> _readSupportedBy(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is List) {
+      return {
+        for (final item in value)
+          if (item != null && item.toString().trim().isNotEmpty)
+            item.toString(): true,
+      };
+    }
+    return <String, dynamic>{};
+  }
+
+  bool _isVisibleUserRecord(dynamic value) {
+    if (value is! Map) return false;
+    final user = Map<String, dynamic>.from(value);
+    final status = (user['status'] ?? '').toString().trim().toLowerCase();
+    final hiddenStatuses = {
+      'deleted',
+      'removed',
+      'inactive',
+      'deactivated',
+      'disabled',
+    };
+
+    return user['deleted'] != true &&
+        user['isDeleted'] != true &&
+        user['removed'] != true &&
+        user['accountDeleted'] != true &&
+        user['disabled'] != true &&
+        !hiddenStatuses.contains(status);
+  }
+
+  Future<List<VoicePost>> _filterVisibleOwnerPosts(
+    List<VoicePost> posts,
+  ) async {
+    final filtered = <VoicePost>[];
+
+    for (final post in posts) {
+      final ownerUid = post.uid.trim();
+      if (ownerUid.isEmpty) continue;
+
+      if (_existingUserIds.contains(ownerUid)) {
+        filtered.add(post);
+        continue;
+      }
+
+      try {
+        final ownerSnapshot = await _usersRef.child(ownerUid).get();
+        if (ownerSnapshot.exists && _isVisibleUserRecord(ownerSnapshot.value)) {
+          filtered.add(post);
+        }
+      } catch (_) {
+        // If rules block this lookup, do not hide valid community posts.
+        filtered.add(post);
+      }
+    }
+
+    return filtered;
   }
 
   // ── Support toggle ──────────────────────────────────────────────────────────
@@ -150,46 +340,103 @@ class _VoicesScreenState extends State<VoicesScreen> {
 
     final ref = _postsRef.child(post.key);
 
-    await ref.runTransaction((object) {
-      if (object == null) return Transaction.abort();
+    final hasSupported = post.supportedBy.containsKey(_currentUid);
 
-      final data = Map<String, dynamic>.from(object as Map);
-
-      final supportedBy = data['supportedBy'] != null
-          ? Map<String, dynamic>.from(data['supportedBy'])
-          : {};
-
-      if (supportedBy[_currentUid] == true) {
-        // ❌ REMOVE SUPPORT → decrease
-        supportedBy.remove(_currentUid);
-        data['supports'] = ((data['supports'] ?? 0) - 1).clamp(0, 1000000);
-      } else {
-        // ✅ ADD SUPPORT → increase
-        supportedBy[_currentUid] = true;
-        data['supports'] = ((data['supports'] ?? 0) + 1).clamp(0, 1000000);
-      }
-
-      data['supportedBy'] = supportedBy;
-
-      return Transaction.success(data);
-    });
+    try {
+      await ref.update({
+        'supportedBy/$_currentUid': hasSupported ? null : true,
+        'supports': ServerValue.increment(hasSupported ? -1 : 1),
+      });
+    } catch (e) {
+      _showSnack(
+        e.toString().toLowerCase().contains('permission')
+            ? 'Support is blocked by Firebase rules. Please update database rules.'
+            : 'Could not update support. Please try again.',
+      );
+    }
   }
 
-  void _sharePost(VoicePost post) {
+  Future<void> _sharePost(VoicePost post) async {
     if (widget.readOnly) {
       _showBlockedNotice();
       return;
     }
 
-    Share.share(
-      """
-🚨 CityVoice Issue
+    final shareText = '''
+CityVoice Issue
 
 ${post.description}
 
 Support this voice on CityVoice app.
-""",
-    );
+''';
+
+    try {
+      final imageFile = await _downloadShareImage(post.imageUrl);
+      await SharePlus.instance.share(
+        ShareParams(
+          text: shareText,
+          subject: 'CityVoice Issue',
+          files: imageFile == null ? null : [imageFile],
+        ),
+      );
+    } catch (_) {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: shareText,
+          subject: 'CityVoice Issue',
+        ),
+      );
+    }
+  }
+
+  Future<XFile?> _downloadShareImage(String imageUrl) async {
+    final trimmedUrl = imageUrl.trim();
+    final uri = Uri.tryParse(trimmedUrl);
+    if (trimmedUrl.isEmpty || uri == null || !uri.hasScheme) {
+      return null;
+    }
+
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(uri);
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+
+      final bytes = await response.fold<List<int>>(
+        <int>[],
+        (previous, element) => previous..addAll(element),
+      );
+      if (bytes.isEmpty) return null;
+
+      final mimeType = response.headers.contentType?.mimeType;
+      final extension = _shareImageExtension(uri, mimeType);
+      final file = File(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}'
+        'cityvoice_${DateTime.now().microsecondsSinceEpoch}$extension',
+      );
+      await file.writeAsBytes(bytes, flush: true);
+      return XFile(file.path, mimeType: mimeType);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  String _shareImageExtension(Uri uri, String? mimeType) {
+    final path = uri.path.toLowerCase();
+    for (final extension in ['.jpg', '.jpeg', '.png', '.webp']) {
+      if (path.endsWith(extension)) return extension;
+    }
+
+    switch (mimeType) {
+      case 'image/png':
+        return '.png';
+      case 'image/webp':
+        return '.webp';
+      default:
+        return '.jpg';
+    }
   }
 
   Future<void> _reportPost(VoicePost post) async {
@@ -265,11 +512,8 @@ Support this voice on CityVoice app.
           .child(post.key)
           .set(reportData);
 
-      await postRef.runTransaction((object) {
-        if (object == null) return Transaction.abort();
-        final data = Map<String, dynamic>.from(object as Map);
-        data['reportCount'] = ((data['reportCount'] as num?)?.toInt() ?? 0) + 1;
-        return Transaction.success(data);
+      await postRef.update({
+        'reportCount': ServerValue.increment(1),
       });
 
       _showSnack('Post reported and added to your profile.');
@@ -457,7 +701,8 @@ Support this voice on CityVoice app.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: false,
+      backgroundColor: const Color(0xFFF5F8FE),
       body: SafeArea(
         child: Column(
           children: [
@@ -523,14 +768,21 @@ Support this voice on CityVoice app.
 
                     // ── CATEGORY FILTER ─────────────────
 
-                    final matchesCategory =
-
-                        _selectedCategory == 'All'
-
-                            ||
-
-                            post.category.toLowerCase() ==
-                                _selectedCategory.toLowerCase();
+                    final category = post.category.toLowerCase();
+                    final visibleCategories = {
+                      'roads',
+                      'garbage',
+                      'street lights',
+                      'water',
+                      'garden & trees',
+                      'footpath',
+                      'public toilets',
+                      'other',
+                    };
+                    final matchesCategory = _selectedCategory == 'All' ||
+                        (_selectedCategory == 'More'
+                            ? !visibleCategories.contains(category)
+                            : category == _selectedCategory.toLowerCase());
 
                     final isBlockedUser = post.uid != _currentUid &&
                         _blockedUserIds.contains(post.uid);
@@ -544,10 +796,37 @@ Support this voice on CityVoice app.
                     ..sort((a, b) =>
                         b.timestamp.compareTo(a.timestamp));
 
-                  return ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                    itemCount: posts.length,
-                    itemBuilder: (_, i) => _buildPostCard(posts[i]),
+                  return FutureBuilder<List<VoicePost>>(
+                    future: _filterVisibleOwnerPosts(posts),
+                    initialData: posts,
+                    builder: (context, ownerSnapshot) {
+                      final visiblePosts = ownerSnapshot.data ?? posts;
+                      if (ownerSnapshot.connectionState ==
+                              ConnectionState.waiting &&
+                          !ownerSnapshot.hasData) {
+                        return const Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                          ),
+                        );
+                      }
+
+                      if (visiblePosts.isEmpty) {
+                        return _buildEmptyState(
+                          icon: Icons.campaign_outlined,
+                          title: 'No voices yet',
+                          subtitle: 'No active community voices to show.',
+                        );
+                      }
+
+                      return ListView.builder(
+                        key: const PageStorageKey<String>('voices-feed-list'),
+                        controller: _feedScrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
+                        itemCount: visiblePosts.length,
+                        itemBuilder: (_, i) => _buildPostCard(visiblePosts[i]),
+                      );
+                    },
                   );
                 },
               ),
@@ -562,42 +841,80 @@ Support this voice on CityVoice app.
 
   Widget _buildHeader() {
     return Container(
-      color: AppColors.white,
-      padding: const EdgeInsets.fromLTRB(20, 16, 16, 14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Voices',
-                style: GoogleFonts.inter(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFFEAF2FF), Color(0xFFF7F9FC)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+      child: SizedBox(
+        height: 56,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Positioned(
+              top: -2,
+              right: 46,
+              child: _Skyline(width: 190, height: 68),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: Row(
                 children: [
-                  Icon(Icons.location_on_rounded, size: 13, color: AppColors.primary),
-                  const SizedBox(width: 3),
-                  Text(
-                    _userLocation,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.primary,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.asset(
+                      'assets/images/logo.jpeg',
+                      width: 34,
+                      height: 34,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 9),
+                  RichText(
+                    text: TextSpan(
+                      style: GoogleFonts.inter(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF151A24),
+                      ),
+                      children: const [
+                        TextSpan(text: 'City'),
+                        TextSpan(
+                          text: 'Voice',
+                          style: TextStyle(color: Color(0xFF2F6BFF)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  _buildNotificationBell(),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _isSearching = !_isSearching;
+                        if (!_isSearching) {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        }
+                      });
+                    },
+                    child: Icon(
+                      _isSearching ? Icons.close_rounded : Icons.search_rounded,
+                      color: const Color(0xFF3A3F4B),
+                      size: 24,
                     ),
                   ),
                 ],
               ),
-            ],
-          ),
-          // _buildNotificationBell(),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -605,58 +922,36 @@ Support this voice on CityVoice app.
   Widget _buildSearchAndFilters() {
 
     return Container(
-      color: AppColors.white,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFF),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF141E3C).withOpacity(0.035),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
 
       child: Column(
         children: [
 
           // ── SEARCH BAR ───────────────────────────
 
-          TextField(
-            controller: _searchController,
+          if (_isSearching) ...[
+            _buildSearchField(),
+            const SizedBox(height: 10),
+          ],
 
-            onChanged: (value) {
-              setState(() {
-                _searchQuery = value.toLowerCase();
-              });
-            },
-
-            decoration: InputDecoration(
-
-              hintText: 'Search voices...',
-
-              hintStyle: GoogleFonts.inter(
-                fontSize: 13,
-                color: AppColors.textLight,
-              ),
-
-              prefixIcon: const Icon(
-                Icons.search_rounded,
-                color: AppColors.textMedium,
-              ),
-
-              filled: true,
-              fillColor: AppColors.background,
-
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 0,
-                horizontal: 14,
-              ),
-
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
+          _buildLocationBar(),
 
           const SizedBox(height: 14),
 
           // ── CATEGORY FILTERS ─────────────────────
 
           SizedBox(
-            height: 38,
+            height: 70,
 
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
@@ -682,48 +977,7 @@ Support this voice on CityVoice app.
                     });
                   },
 
-                  child: AnimatedContainer(
-
-                    duration:
-                    const Duration(milliseconds: 200),
-
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-
-                    decoration: BoxDecoration(
-
-                      color: isSelected
-                          ? AppColors.primary
-                          : AppColors.background,
-
-                      borderRadius:
-                      BorderRadius.circular(100),
-
-                      border: Border.all(
-                        color: isSelected
-                            ? AppColors.primary
-                            : Colors.black.withOpacity(0.06),
-                      ),
-                    ),
-
-                    child: Center(
-                      child: Text(
-
-                        category,
-
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-
-                          color: isSelected
-                              ? Colors.white
-                              : AppColors.textMedium,
-                        ),
-                      ),
-                    ),
-                  ),
+                  child: _buildCategoryTile(category, isSelected),
                 );
               },
             ),
@@ -733,29 +987,226 @@ Support this voice on CityVoice app.
     );
   }
 
+  Widget _buildSearchField() {
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF141E3C).withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        autofocus: true,
+        onChanged: (value) {
+          setState(() => _searchQuery = value.trim().toLowerCase());
+        },
+        decoration: InputDecoration(
+          hintText: 'Search voices...',
+          hintStyle: GoogleFonts.inter(
+            fontSize: 13,
+            color: const Color(0xFF9AA1B0),
+          ),
+          prefixIcon: const Icon(
+            Icons.search_rounded,
+            color: Color(0xFF2F6BFF),
+            size: 20,
+          ),
+          suffixIcon: _searchQuery.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  onPressed: () {
+                    setState(() {
+                      _searchController.clear();
+                      _searchQuery = '';
+                    });
+                  },
+                ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationBar() {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF141E3C).withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.location_on_rounded, color: Color(0xFF2F6BFF), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _userLocation,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF151A24),
+              ),
+            ),
+          ),
+          const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF9AA1B0), size: 18),
+          const SizedBox(width: 10),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.my_location_rounded, color: Color(0xFF2F6BFF), size: 17),
+              const SizedBox(width: 5),
+              Text(
+                'Near Me',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF2F6BFF),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryTile(String category, bool isSelected) {
+    final label = category == 'Street Lights' ? 'Streetlight' : category;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: 68,
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF2F6BFF) : AppColors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(
+          color: isSelected ? const Color(0xFF2F6BFF) : const Color(0xFFEAECF1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isSelected
+                ? const Color(0xFF2F6BFF).withOpacity(0.35)
+                : const Color(0xFF141E3C).withOpacity(0.05),
+            blurRadius: isSelected ? 14 : 8,
+            offset: Offset(0, isSelected ? 6 : 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            _categoryIcon(category),
+            size: 18,
+            color: isSelected ? Colors.white : const Color(0xFF5B6274),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isSelected ? Colors.white : const Color(0xFF5B6274),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _categoryIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'all':
+        return Icons.dashboard_rounded;
+      case 'roads':
+        return Icons.add_road_rounded;
+      case 'garbage':
+        return Icons.delete_outline_rounded;
+      case 'street lights':
+        return Icons.lightbulb_outline_rounded;
+      case 'water':
+        return Icons.water_drop_outlined;
+      case 'footpath':
+        return Icons.directions_walk_rounded;
+      case 'public toilets':
+        return Icons.wc_rounded;
+      case 'garden & trees':
+        return Icons.park_outlined;
+      default:
+        return Icons.more_horiz_rounded;
+    }
+  }
+
   Widget _buildNotificationBell() {
+    final badgeCount = widget.updatesBadgeCount;
     return Stack(
       children: [
         Container(
-          width: 44, height: 44,
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
-            color: AppColors.background,
+            color: AppColors.white,
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.black.withOpacity(0.07)),
+            border: Border.all(color: const Color(0xFFEAECF1)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF141E3C).withOpacity(0.06),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
           child: const Icon(Icons.notifications_outlined,
-              color: AppColors.textDark, size: 22),
+              color: Color(0xFF3A3F4B), size: 19),
         ),
-        Positioned(
-          right: 8, top: 8,
-          child: Container(
-            width: 8, height: 8,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
+        if (badgeCount > 0)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 16),
+              height: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(color: const Color(0xFFEAF2FF), width: 2),
+              ),
+              child: Center(
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -763,6 +1214,350 @@ Support this voice on CityVoice app.
   // ── Post card ────────────────────────────────────────────────────────────────
 
   Widget _buildPostCard(VoicePost post) {
+    final catColor = _catColor(post.category);
+    final catBg = _catBg(post.category);
+    final hasSupported = post.supportedBy.containsKey(_currentUid);
+
+    return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF141E3C).withOpacity(0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildAvatar(post.name),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          post.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        Text(
+                          _getTimeAgo(post.timestamp),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF667085),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildCategoryBadge(post.category, catColor, catBg),
+                  const SizedBox(width: 8),
+                  _buildStatusBadge(post.status),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              child: ReadMoreText(
+                post.description,
+                trimLines: 2,
+                trimMode: TrimMode.Line,
+                trimCollapsedText: ' See more',
+                trimExpandedText: ' Show less',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: const Color(0xFF111827),
+                  height: 1.45,
+                ),
+                moreStyle: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+                lessStyle: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+            if (post.imageUrl.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    post.imageUrl,
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (_, child, progress) =>
+                        progress == null
+                            ? child
+                            : Container(
+                                height: 150,
+                                color: AppColors.background,
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.primary,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 150,
+                      color: AppColors.background,
+                      child: const Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: AppColors.textLight,
+                          size: 32,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_rounded,
+                    size: 14,
+                    color: Color(0xFF667085),
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      post.location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF667085),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0xFFF0F3F8))),
+              ),
+              child: Row(
+                children: [
+                  _buildPostAction(
+                    icon: hasSupported
+                        ? Icons.thumb_up_alt_rounded
+                        : Icons.thumb_up_alt_outlined,
+                    label: 'Support',
+                    count: _formatCount(post.supports),
+                    color:
+                        hasSupported ? AppColors.primary : const Color(0xFF202A3A),
+                    onTap: widget.readOnly ? null : () => _toggleSupport(post),
+                  ),
+                  _buildActionDivider(),
+                  _buildPostAction(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    label: 'Respond',
+                    count: _formatCount(post.replies),
+                    color: const Color(0xFF202A3A),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (c) => PostDetailScreen(
+                          post: post,
+                          readOnly: widget.readOnly,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!widget.readOnly) _buildActionDivider(),
+                  if (!widget.readOnly)
+                    _buildPostAction(
+                      icon: Icons.share_outlined,
+                      label: 'Share',
+                      count: '',
+                      color: const Color(0xFF202A3A),
+                      onTap: () => _sharePost(post),
+                    ),
+                  if (!widget.readOnly) _buildActionDivider(),
+                  if (!widget.readOnly)
+                    _buildPostAction(
+                      icon: Icons.flag_outlined,
+                      label: 'Report',
+                      count: '',
+                      color: const Color(0xFFE53935),
+                      onTap: () => _reportPost(post),
+                    ),
+                  if (!widget.readOnly &&
+                      post.uid.isNotEmpty &&
+                      post.uid != _currentUid)
+                    _buildActionDivider(),
+                  if (!widget.readOnly &&
+                      post.uid.isNotEmpty &&
+                      post.uid != _currentUid)
+                    _buildPostAction(
+                      icon: _blockedUserIds.contains(post.uid)
+                          ? Icons.person_add_alt_1_outlined
+                          : Icons.block_rounded,
+                      label: _blockedUserIds.contains(post.uid)
+                          ? 'Unblock'
+                          : 'Block',
+                      count: '',
+                      color: const Color(0xFF202A3A),
+                      onTap: () => _toggleBlockUser(post),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+    );
+  }
+
+  Widget _buildActionDivider() {
+    return Container(
+      width: 1,
+      height: 34,
+      color: const Color(0xFFEFF3F8),
+    );
+  }
+
+  Widget _buildCategoryBadge(String category, Color color, Color bgColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_categoryIcon(category), size: 14, color: color),
+          const SizedBox(width: 5),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 82),
+            child: Text(
+              category,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String status) {
+    final isResolved = status.toLowerCase() == 'resolved';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: isResolved ? const Color(0xFFE9F9EE) : const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(100),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.circle,
+            size: 7,
+            color: isResolved ? const Color(0xFF1E9E57) : const Color(0xFFE69500),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            isResolved ? 'Resolved' : 'Pending',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: isResolved ? const Color(0xFF1E9E57) : const Color(0xFFE69500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPostAction({
+    required IconData icon,
+    required String label,
+    required String count,
+    required Color color,
+    required VoidCallback? onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 50,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 17, color: color),
+                  const SizedBox(width: 5),
+                  Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+              if (count.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  count,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatCount(int value) {
+    if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
+    if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
+    return value.toString();
+  }
+
+  Widget buildPostCardLegacy(VoicePost post) {
     final catColor = _catColor(post.category);
     final catBg = _catBg(post.category);
 
@@ -1084,7 +1879,7 @@ Support this voice on CityVoice app.
                           children: [
                             const Icon(
                               Icons.flag_outlined,
-                              color: const Color(0xFF0052D4),
+                              color: Color(0xFF0052D4),
                               size: 16,
                             ),
                             const SizedBox(width: 4),
@@ -1112,10 +1907,10 @@ Support this voice on CityVoice app.
 
   Widget _buildAvatar(String name) {
     return Container(
-      width: 42, height: 42,
+      width: 36, height: 36,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFFFF7B5F), AppColors.primary],
+          colors: [Color(0xFF2F6BFF), Color(0xFF1E4FD6)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1134,7 +1929,7 @@ Support this voice on CityVoice app.
     );
   }
 
-  Widget _buildActionChip({
+  Widget buildActionChipLegacy({
     required IconData icon,
     required String label,
     required Color color,

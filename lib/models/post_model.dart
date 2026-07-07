@@ -50,9 +50,7 @@ class VoicePost {
       supports: (data['supports'] as num?)?.toInt() ?? 0,
       replies: (data['replies'] as num?)?.toInt() ?? 0,
       status: data['status'] ?? 'pending',
-      supportedBy: data['supportedBy'] != null
-          ? Map<String, dynamic>.from(data['supportedBy'])
-          : {},
+      supportedBy: _readSupportedBy(data['supportedBy']),
     );
   }
 
@@ -71,10 +69,20 @@ class VoicePost {
       supports: (data['supports'] as num?)?.toInt() ?? 0,
       replies: (data['replies'] as num?)?.toInt() ?? 0,
       status: data['status'] ?? 'pending',
-      supportedBy: data['supportedBy'] != null
-          ? Map<String, dynamic>.from(data['supportedBy'])
-          : {},
+      supportedBy: _readSupportedBy(data['supportedBy']),
     );
+  }
+
+  static Map<String, dynamic> _readSupportedBy(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is List) {
+      return {
+        for (final item in value)
+          if (item != null && item.toString().trim().isNotEmpty)
+            item.toString(): true,
+      };
+    }
+    return {};
   }
 
   // Reads the first non-empty text value from possible legacy field names.

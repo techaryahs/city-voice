@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../models/post_model.dart';
+import '../../landing_screen.dart';
 import '../voices/post_detail_screen.dart';
 import 'settings_page.dart';
 import 'widgets/edit_profile_sheet.dart';
@@ -441,6 +442,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (confirmed != true) return;
 
     await _auth.signOut();
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LandingScreen()),
+      (route) => false,
+    );
   }
 
   // ── Build Utility ─────────────────────────────────────────────────────

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cityvoice/view/screens/users/profile/profile_screen.dart';
 import 'package:cityvoice/view/screens/users/raise_voice/raise_voice_page.dart';
 import 'package:cityvoice/view/screens/users/voices/voices_screen.dart';
@@ -19,12 +21,21 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  bool _hasUpdatesDot = false;
+  int _updatesBadgeCount = 0;
+  DateTime? _latestAdminNoticeAt;
 
   final DatabaseReference _usersRef =
       FirebaseDatabase.instance.ref().child('users');
+  final DatabaseReference _notificationsRef =
+      FirebaseDatabase.instance.ref().child('notifications');
+  StreamSubscription<DatabaseEvent>? _notificationsSubscription;
 
   List<Widget> _screens(bool isBlocked) => [
-        VoicesScreen(readOnly: isBlocked),
+        VoicesScreen(
+          readOnly: isBlocked,
+          updatesBadgeCount: _updatesBadgeCount,
+        ),
         MapScreen(readOnly: isBlocked),
         const AlertsScreen(),
         ProfileScreen(readOnly: isBlocked),
@@ -34,6 +45,86 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _requestLocationPermission();
+    _listenForUpdateDot();
+  }
+
+  @override
+  void dispose() {
+    _notificationsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenForUpdateDot() {
+    _notificationsSubscription = _notificationsRef.onValue.listen((event) async {
+      DateTime? latestNoticeAt;
+      final activeNoticeDates = <DateTime>[];
+      final now = DateTime.now();
+      if (event.snapshot.value is Map) {
+        final raw = Map<String, dynamic>.from(event.snapshot.value as Map);
+        for (final value in raw.values) {
+          if (value is! Map) continue;
+          final notice = Map<String, dynamic>.from(value);
+          if ((notice['type'] ?? '').toString() != 'admin_notify') continue;
+
+          final expiresAt = DateTime.tryParse(
+            (notice['expiresAt'] ?? '').toString(),
+          );
+          if (expiresAt != null && !expiresAt.isAfter(now)) continue;
+
+          final createdAt = DateTime.tryParse(
+            (notice['createdAt'] ?? '').toString(),
+          ) ?? now;
+          if (latestNoticeAt == null || createdAt.isAfter(latestNoticeAt)) {
+            latestNoticeAt = createdAt;
+          }
+          activeNoticeDates.add(createdAt);
+        }
+      }
+
+      _latestAdminNoticeAt = latestNoticeAt;
+      final lastSeenAt = await _loadLastSeenAdminNoticeAt();
+      final unseenCount = activeNoticeDates
+          .where((date) => lastSeenAt == null || date.isAfter(lastSeenAt))
+          .length;
+      final hasActiveNotice = unseenCount > 0;
+
+      if (mounted &&
+          (_hasUpdatesDot != hasActiveNotice ||
+              _updatesBadgeCount != unseenCount)) {
+        setState(() {
+          _hasUpdatesDot = hasActiveNotice;
+          _updatesBadgeCount = unseenCount;
+        });
+      }
+    });
+  }
+
+  Future<DateTime?> _loadLastSeenAdminNoticeAt() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+
+    final snapshot =
+        await _usersRef.child(uid).child('lastSeenAdminNoticeAt').get();
+    return DateTime.tryParse((snapshot.value ?? '').toString());
+  }
+
+  Future<void> _markUpdatesSeen() async {
+    if (_currentIndex == 2) return;
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null && _latestAdminNoticeAt != null) {
+      await _usersRef
+          .child(uid)
+          .child('lastSeenAdminNoticeAt')
+          .set(DateTime.now().toIso8601String());
+    }
+
+    if (mounted && (_hasUpdatesDot || _updatesBadgeCount != 0)) {
+      setState(() {
+        _hasUpdatesDot = false;
+        _updatesBadgeCount = 0;
+      });
+    }
   }
 
   Future<void> _requestLocationPermission() async {
@@ -70,11 +161,7 @@ class _MainScreenState extends State<MainScreen> {
           resizeToAvoidBottomInset: false,
           backgroundColor: AppColors.background,
           body: _screens(isBlocked)[_currentIndex],
-          floatingActionButton: _buildFAB(isBlocked),
-          floatingActionButtonAnimator: FloatingActionButtonAnimator.noAnimation,
-          floatingActionButtonLocation:
-              FloatingActionButtonLocation.centerDocked,
-          bottomNavigationBar: _buildBottomBar(),
+          bottomNavigationBar: _buildBottomBar(isBlocked),
         );
       },
     );
@@ -108,53 +195,74 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildFAB(bool isBlocked) {
-    return Container(
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            colors: [Color(0xFF0052D4), Color(0xFF0D6EFD), Color(0xFF3F8CFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0D6EFD).withOpacity(0.38),
-              blurRadius: 20,
-              offset: const Offset(0, 7),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () {
-              if (isBlocked) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Your account is blocked. You can only view posts.'),
-                  ),
-                );
-                return;
-              }
-
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const RaiseVoicePage(),
+    return SizedBox(
+      width: 78,
+      height: 72,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF2F6BFF), Color(0xFF006FFB)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2F6BFF).withOpacity(0.36),
+                  blurRadius: 18,
+                  offset: const Offset(0, 7),
                 ),
-              );
-            },
-            child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () {
+                  if (isBlocked) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Your account is blocked. You can only view posts.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RaiseVoicePage(),
+                    ),
+                  );
+                },
+                child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+              ),
+            ),
           ),
-        ),
+          const SizedBox(height: 2),
+          Text(
+            'Raise Issue',
+            style: GoogleFonts.inter(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1E4FD6),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildBottomBar() {
+  Widget _buildBottomBar(bool isBlocked) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -168,23 +276,34 @@ class _MainScreenState extends State<MainScreen> {
       ),
       child: SafeArea(
         child: SizedBox(
-          height: 64,
-          child: Row(
+          height: 78,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
             children: [
-              _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Voices'),
-              _buildNavItem(1, Icons.map_rounded, Icons.map_outlined, 'Map'),
-              const Expanded(child: SizedBox()),
-              _buildNavItem(
-                2,
-                Icons.notifications_rounded,
-                Icons.notifications_outlined,
-                'Alerts',
+              Row(
+                children: [
+                  _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Home'),
+                  _buildNavItem(1, Icons.map_rounded, Icons.map_outlined, 'Map'),
+                  const Expanded(child: SizedBox()),
+                  _buildNavItem(
+                    2,
+                    Icons.article_rounded,
+                    Icons.article_outlined,
+                    'Updates',
+                    showDot: _hasUpdatesDot,
+                  ),
+                  _buildNavItem(
+                    3,
+                    Icons.person_rounded,
+                    Icons.person_outlined,
+                    'Profile',
+                  ),
+                ],
               ),
-              _buildNavItem(
-                3,
-                Icons.person_rounded,
-                Icons.person_outlined,
-                'Profile',
+              Positioned(
+                top: -28,
+                child: _buildFAB(isBlocked),
               ),
             ],
           ),
@@ -197,30 +316,69 @@ class _MainScreenState extends State<MainScreen> {
     int index,
     IconData activeIcon,
     IconData inactiveIcon,
-    String label,
-  ) {
+    String label, {
+    bool showDot = false,
+  }) {
     final isActive = _currentIndex == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _currentIndex = index),
+        onTap: () {
+          if (index == 2) {
+            _markUpdatesSeen();
+          }
+          setState(() => _currentIndex = index);
+        },
         behavior: HitTestBehavior.opaque,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isActive ? activeIcon : inactiveIcon,
-              color: isActive ? const Color(0xFF0052D4) : const Color(0xFF8EA3B8),
-              size: 24,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isActive ? activeIcon : inactiveIcon,
+                  color: isActive
+                      ? const Color(0xFF2F6BFF)
+                      : const Color(0xFF5B6274),
+                  size: 24,
+                ),
+                if (showDot)
+                  Positioned(
+                    top: -2,
+                    right: -3,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE53935),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: GoogleFonts.inter(
                 fontSize: 11,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                color: isActive ? const Color(0xFF0052D4) : const Color(0xFF8EA3B8),
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                color: isActive
+                    ? const Color(0xFF2F6BFF)
+                    : const Color(0xFF5B6274),
               ),
             ),
+            if (isActive && index == 0) ...[
+              const SizedBox(height: 5),
+              Container(
+                width: 28,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2F6BFF),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ],
           ],
         ),
       ),

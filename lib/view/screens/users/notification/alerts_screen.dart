@@ -337,7 +337,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
       final DateTime? expiresAt =
           _parseDateTime(notification['expiresAt']);
       if (expiresAt != null && !expiresAt.isAfter(now)) {
-        await _notificationsRef.child(entry.key).remove();
+        try {
+          await _notificationsRef.child(entry.key).remove();
+        } catch (_) {
+          // Normal users can ignore expired notices even when cleanup is admin-only.
+        }
         continue;
       }
 
@@ -729,6 +733,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   Widget _buildAlertCard(_AlertItem alert) {
     final bool isExpanded = _expandedIds.contains(alert.id);
+    final bool showTitle = alert.type != _AlertType.system ||
+        alert.title.trim().toLowerCase() != 'cityvoice notice';
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -840,24 +846,25 @@ class _AlertsScreenState extends State<AlertsScreen> {
                       const SizedBox(height: 5),
 
                       // Title — always fully visible
-                      Text(
-                        alert.title,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF111827),
-                          height: 1.4,
+                      if (showTitle)
+                        Text(
+                          alert.title,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF111827),
+                            height: 1.4,
+                          ),
+                          maxLines: isExpanded ? null : 2,
+                          overflow: isExpanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
                         ),
-                        maxLines: isExpanded ? null : 2,
-                        overflow: isExpanded
-                            ? TextOverflow.visible
-                            : TextOverflow.ellipsis,
-                      ),
 
                       // Subtitle — collapsed: 1 line, expanded: full
                       if (alert.subtitle != null &&
                           alert.subtitle!.trim().isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                        SizedBox(height: showTitle ? 4 : 8),
                         AnimatedCrossFade(
                           duration: const Duration(milliseconds: 220),
                           crossFadeState: isExpanded

@@ -101,12 +101,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         'timestamp': timestamp,
       });
 
-      // 3. Increment reply count on post
-      await _dbRef.child('posts').child(widget.post.key).runTransaction((Object? post) {
-        if (post == null) return Transaction.abort();
-        Map<String, dynamic> postMap = Map<String, dynamic>.from(post as Map);
-        postMap['replies'] = (postMap['replies'] ?? 0) + 1;
-        return Transaction.success(postMap);
+      // 3. Increment reply count on post without rewriting the whole post.
+      await _dbRef.child('posts').child(widget.post.key).update({
+        'replies': ServerValue.increment(1),
       });
 
       _commentController.clear();
@@ -198,12 +195,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .child(widget.post.key)
           .set(reportData);
 
-      await postRef.runTransaction((Object? post) {
-        if (post == null) return Transaction.abort();
-        final postMap = Map<String, dynamic>.from(post as Map);
-        postMap['reportCount'] =
-            ((postMap['reportCount'] as num?)?.toInt() ?? 0) + 1;
-        return Transaction.success(postMap);
+      await postRef.update({
+        'reportCount': ServerValue.increment(1),
       });
 
       _showSnack('Post reported and added to your profile.');

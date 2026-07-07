@@ -1,5 +1,6 @@
 import 'package:cityvoice/view/auth/signup_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FilteringTextInputFormatter;
@@ -99,10 +100,12 @@ class _SignInScreenState extends State<SignInScreen> {
       } else {
         _showSnack("Login Error: ${e.message}");
       }
+    } on FirebaseException catch (e) {
+      _showSnack(_friendlyFirebaseMessage(e));
     } catch (e) {
-      _showSnack("Error: $e");
+      _showSnack(_friendlyErrorMessage(e));
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -118,14 +121,52 @@ class _SignInScreenState extends State<SignInScreen> {
     try {
       await _auth.sendPasswordResetEmail(email: email);
       _showSnack("Password reset email sent");
+    } on FirebaseAuthException catch (e) {
+      _showSnack(_friendlyAuthMessage(e));
     } catch (e) {
-      _showSnack("Error: $e");
+      _showSnack(_friendlyErrorMessage(e));
     }
   }
 
   void _showSnack(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(
+          msg,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+
+  String _friendlyAuthMessage(FirebaseAuthException e) {
+    if (e.code == 'user-not-found') return 'User not found';
+    if (e.code == 'wrong-password') return 'Wrong password';
+    if (e.code == 'invalid-email') return 'Invalid email format';
+    if (e.code == 'network-request-failed') return 'Check internet connection';
+    return e.message ?? 'Could not complete sign in. Please try again.';
+  }
+
+  String _friendlyFirebaseMessage(FirebaseException e) {
+    final text = e.toString().toLowerCase();
+    if (e.code == 'permission-denied' || text.contains('permission denied')) {
+      return 'Database permission denied. Please check your account access.';
+    }
+    if (e.code == 'network-error' || text.contains('network')) {
+      return 'Check internet connection';
+    }
+    return 'Could not load account data. Please try again.';
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('permission denied')) {
+      return 'Database permission denied. Please check your account access.';
+    }
+    if (text.contains('network')) return 'Check internet connection';
+    return 'Something went wrong. Please try again.';
   }
 
   @override

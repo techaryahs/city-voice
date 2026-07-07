@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -131,7 +132,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           _createAccount();
         }
       } catch (e) {
-        _showSnack("Could not send OTP: $e");
+        _showSnack(_friendlyErrorMessage(e, fallback: "Could not send OTP"));
       } finally {
         if (mounted) setState(() => _isLoading = false);
       }
@@ -179,11 +180,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
       } else {
         _showSnack("Auth Error: ${e.message}");
       }
+    } on FirebaseException catch (e) {
+      _showSnack(_friendlyFirebaseMessage(e));
     } catch (e) {
-      _showSnack("Error: $e");
+      _showSnack(_friendlyErrorMessage(e));
     }
     finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -207,8 +210,38 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   void _showSnack(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(
+          message,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
     );
+  }
+
+  String _friendlyFirebaseMessage(FirebaseException e) {
+    final text = e.toString().toLowerCase();
+    if (e.code == 'permission-denied' || text.contains('permission denied')) {
+      return 'Database permission denied. Please check Firebase rules for users.';
+    }
+    if (e.code == 'network-error' || text.contains('network')) {
+      return 'Check internet connection';
+    }
+    return 'Could not save account data. Please try again.';
+  }
+
+  String _friendlyErrorMessage(
+    Object error, {
+    String fallback = 'Something went wrong. Please try again.',
+  }) {
+    final text = error.toString().toLowerCase();
+    if (text.contains('permission denied')) {
+      return 'Database permission denied. Please check Firebase rules for users.';
+    }
+    if (text.contains('network')) return 'Check internet connection';
+    return fallback;
   }
 
   Future<void> _openPrivacyPolicy() async {
