@@ -188,8 +188,13 @@ class _VoicesScreenState extends State<VoicesScreen> {
   Set<String> _blockedUserIds = {};
   Set<String> _existingUserIds = {};
   final Map<String, String> _profileImageCache = {};
+  final Map<String, XFile> _shareImageCache = {};
   bool _hasLoadedUsers = false;
   StreamSubscription<DatabaseEvent>? _usersSubscription;
+  Future<List<VoicePost>>? _visiblePostsFuture;
+  String _visiblePostsKey = '';
+  List<VoicePost>? _lastVisiblePosts;
+  bool _isSharing = false;
 
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -326,6 +331,20 @@ class _VoicesScreenState extends State<VoicesScreen> {
     return filtered;
   }
 
+  Future<List<VoicePost>> _visiblePostsFor(List<VoicePost> posts) {
+    final key = posts.map((post) => '${post.key}:${post.timestamp}').join('|');
+    if (_visiblePostsFuture != null && key == _visiblePostsKey) {
+      return _visiblePostsFuture!;
+    }
+
+    _visiblePostsKey = key;
+    _visiblePostsFuture = _filterVisibleOwnerPosts(posts).then((visiblePosts) {
+      _lastVisiblePosts = visiblePosts;
+      return visiblePosts;
+    });
+    return _visiblePostsFuture!;
+  }
+
   // ── Support toggle ──────────────────────────────────────────────────────────
 
   Future<void> _toggleSupport(VoicePost post) async {
@@ -359,6 +378,9 @@ class _VoicesScreenState extends State<VoicesScreen> {
       _showBlockedNotice();
       return;
     }
+    if (_isSharing) return;
+    _isSharing = true;
+
     const playStoreLink =
         'https://play.google.com/store/apps/details?id=com.amit.cityvoice';
     final shareText =
@@ -385,6 +407,8 @@ Support this voice on CityVoice app.
       await SharePlus.instance.share(
         ShareParams(text: shareText, subject: 'CityVoice Issue'),
       );
+    } finally {
+      _isSharing = false;
     }
   }
 
@@ -394,11 +418,18 @@ Support this voice on CityVoice app.
     if (trimmedUrl.isEmpty || uri == null || !uri.hasScheme) {
       return null;
     }
+    if (_shareImageCache.containsKey(trimmedUrl)) {
+      return _shareImageCache[trimmedUrl];
+    }
 
     final client = HttpClient();
     try {
-      final request = await client.getUrl(uri);
-      final response = await request.close();
+      final request = await client.getUrl(uri).timeout(
+            const Duration(seconds: 8),
+          );
+      final response = await request.close().timeout(
+            const Duration(seconds: 12),
+          );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
@@ -416,7 +447,9 @@ Support this voice on CityVoice app.
         'cityvoice_${DateTime.now().microsecondsSinceEpoch}$extension',
       );
       await file.writeAsBytes(bytes, flush: true);
-      return XFile(file.path, mimeType: mimeType);
+      final xFile = XFile(file.path, mimeType: mimeType);
+      _shareImageCache[trimmedUrl] = xFile;
+      return xFile;
     } finally {
       client.close(force: true);
     }
@@ -795,10 +828,11 @@ Support this voice on CityVoice app.
                         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
                   return FutureBuilder<List<VoicePost>>(
-                    future: _filterVisibleOwnerPosts(posts),
-                    initialData: posts,
+                    future: _visiblePostsFor(posts),
+                    initialData: _lastVisiblePosts ?? posts,
                     builder: (context, ownerSnapshot) {
-                      final visiblePosts = ownerSnapshot.data ?? posts;
+                      final visiblePosts =
+                          ownerSnapshot.data ?? _lastVisiblePosts ?? posts;
                       if (ownerSnapshot.connectionState ==
                               ConnectionState.waiting &&
                           !ownerSnapshot.hasData) {
@@ -820,7 +854,15 @@ Support this voice on CityVoice app.
                       return ListView.builder(
                         key: const PageStorageKey<String>('voices-feed-list'),
                         controller: _feedScrollController,
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          8,
+                          16,
+                          MediaQuery.of(context).orientation ==
+                                  Orientation.landscape
+                              ? 76
+                              : 100,
+                        ),
                         itemCount: visiblePosts.length,
                         itemBuilder: (_, i) => _buildPostCard(visiblePosts[i]),
                       );
@@ -838,6 +880,9 @@ Support this voice on CityVoice app.
   // ── Header ──────────────────────────────────────────────────────────────────
 
   Widget _buildHeader() {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -846,9 +891,9 @@ Support this voice on CityVoice app.
           end: Alignment.bottomCenter,
         ),
       ),
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+      padding: EdgeInsets.fromLTRB(18, isLandscape ? 6 : 12, 18, 0),
       child: SizedBox(
-        height: 56,
+        height: isLandscape ? 42 : 56,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -918,6 +963,9 @@ Support this voice on CityVoice app.
   }
 
   Widget _buildSearchAndFilters() {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF8FBFF),
@@ -929,30 +977,31 @@ Support this voice on CityVoice app.
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+      padding: EdgeInsets.fromLTRB(14, 0, 14, isLandscape ? 8 : 18),
 
       child: Column(
         children: [
           // ── SEARCH BAR ───────────────────────────
           if (_isSearching) ...[
             _buildSearchField(),
-            const SizedBox(height: 10),
+            SizedBox(height: isLandscape ? 6 : 10),
           ],
 
           _buildLocationBar(),
 
-          const SizedBox(height: 14),
+          SizedBox(height: isLandscape ? 8 : 14),
 
           // ── CATEGORY FILTERS ─────────────────────
           SizedBox(
-            height: 70,
+            height: isLandscape ? 44 : 70,
 
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
 
               itemCount: _categories.length,
 
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              separatorBuilder: (_, __) =>
+                  SizedBox(width: isLandscape ? 8 : 10),
 
               itemBuilder: (_, index) {
                 final category = _categories[index];
@@ -1026,9 +1075,12 @@ Support this voice on CityVoice app.
   }
 
   Widget _buildLocationBar() {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: isLandscape ? 36 : 48,
+      padding: EdgeInsets.symmetric(horizontal: isLandscape ? 12 : 16),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(14),
@@ -1091,13 +1143,18 @@ Support this voice on CityVoice app.
   }
 
   Widget _buildCategoryTile(String category, bool isSelected) {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     final label = category == 'Street Lights' ? 'Streetlight' : category;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
-      width: 68,
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+      width: isLandscape ? 92 : 68,
+      height: isLandscape ? 38 : 60,
+      padding: EdgeInsets.symmetric(
+        horizontal: isLandscape ? 12 : 6,
+        vertical: isLandscape ? 0 : 7,
+      ),
       decoration: BoxDecoration(
         color: isSelected ? const Color(0xFF2F6BFF) : AppColors.white,
         borderRadius: BorderRadius.circular(13),
@@ -1117,12 +1174,14 @@ Support this voice on CityVoice app.
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            _categoryIcon(category),
-            size: 18,
-            color: isSelected ? Colors.white : const Color(0xFF5B6274),
-          ),
-          const SizedBox(height: 6),
+          if (!isLandscape) ...[
+            Icon(
+              _categoryIcon(category),
+              size: 18,
+              color: isSelected ? Colors.white : const Color(0xFF5B6274),
+            ),
+            const SizedBox(height: 6),
+          ],
           Text(
             label,
             maxLines: 1,
@@ -1218,12 +1277,14 @@ Support this voice on CityVoice app.
   // ── Post card ────────────────────────────────────────────────────────────────
 
   Widget _buildPostCard(VoicePost post) {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     final catColor = _catColor(post.category);
     final catBg = _catBg(post.category);
     final hasSupported = post.supportedBy.containsKey(_currentUid);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.only(bottom: isLandscape ? 8 : 12),
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
@@ -1239,7 +1300,12 @@ Support this voice on CityVoice app.
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+            padding: EdgeInsets.fromLTRB(
+              14,
+              isLandscape ? 10 : 14,
+              14,
+              isLandscape ? 4 : 6,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1308,13 +1374,13 @@ Support this voice on CityVoice app.
                 borderRadius: BorderRadius.circular(12),
                 child: Image.network(
                   post.imageUrl,
-                  height: 150,
+                  height: isLandscape ? 96 : 150,
                   width: double.infinity,
                   fit: BoxFit.cover,
                   loadingBuilder: (_, child, progress) => progress == null
                       ? child
                       : Container(
-                          height: 150,
+                                height: isLandscape ? 96 : 150,
                           color: AppColors.background,
                           child: const Center(
                             child: CircularProgressIndicator(
@@ -1324,7 +1390,7 @@ Support this voice on CityVoice app.
                           ),
                         ),
                   errorBuilder: (_, __, ___) => Container(
-                    height: 150,
+                      height: isLandscape ? 96 : 150,
                     color: AppColors.background,
                     child: const Center(
                       child: Icon(
@@ -1915,6 +1981,13 @@ Support this voice on CityVoice app.
   Widget _buildAvatar(String name, {String? uid}) {
     final userId = uid?.trim() ?? '';
     if (userId.isNotEmpty) {
+      if (_profileImageCache.containsKey(userId)) {
+        return _buildAvatarContent(
+          name,
+          imageUrl: _profileImageCache[userId] ?? '',
+        );
+      }
+
       return FutureBuilder<String>(
         future: _resolveProfileImageUrl(userId),
         builder: (context, snapshot) {

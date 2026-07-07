@@ -195,16 +195,19 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildFAB(bool isBlocked) {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     return SizedBox(
-      width: 78,
-      height: 72,
+      width: isLandscape ? 62 : 78,
+      height: isLandscape ? 48 : 72,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: isLandscape ? 42 : 50,
+            height: isLandscape ? 42 : 50,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
@@ -244,25 +247,34 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   );
                 },
-                child: const Icon(Icons.add_rounded, color: Colors.white, size: 30),
+                child: Icon(
+                  Icons.add_rounded,
+                  color: Colors.white,
+                  size: isLandscape ? 26 : 30,
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            'Raise Issue',
-            style: GoogleFonts.inter(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF1E4FD6),
+          if (!isLandscape) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Raise Issue',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1E4FD6),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildBottomBar(bool isBlocked) {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -276,7 +288,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
       child: SafeArea(
         child: SizedBox(
-          height: 78,
+          height: isLandscape ? 54 : 78,
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.topCenter,
@@ -302,7 +314,7 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ),
               Positioned(
-                top: -28,
+                top: isLandscape ? -16 : -28,
                 child: _buildFAB(isBlocked),
               ),
             ],
@@ -320,6 +332,8 @@ class _MainScreenState extends State<MainScreen> {
     bool showDot = false,
   }) {
     final isActive = _currentIndex == index;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -340,7 +354,7 @@ class _MainScreenState extends State<MainScreen> {
                   color: isActive
                       ? const Color(0xFF2F6BFF)
                       : const Color(0xFF5B6274),
-                  size: 24,
+                  size: isLandscape ? 21 : 24,
                 ),
                 if (showDot)
                   Positioned(
@@ -357,18 +371,18 @@ class _MainScreenState extends State<MainScreen> {
                   ),
               ],
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: isLandscape ? 1 : 4),
             Text(
               label,
               style: GoogleFonts.inter(
-                fontSize: 11,
+                fontSize: isLandscape ? 9 : 11,
                 fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                 color: isActive
                     ? const Color(0xFF2F6BFF)
                     : const Color(0xFF5B6274),
               ),
             ),
-            if (isActive && index == 0) ...[
+            if (!isLandscape && isActive && index == 0) ...[
               const SizedBox(height: 5),
               Container(
                 width: 28,

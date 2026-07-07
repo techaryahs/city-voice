@@ -1041,6 +1041,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }) {
     final userId = uid?.trim() ?? '';
     if (userId.isNotEmpty) {
+      if (_profileImageCache.containsKey(userId)) {
+        return _buildAvatarContent(
+          name,
+          imageUrl: _profileImageCache[userId] ?? '',
+          size: size,
+          fontSize: fontSize,
+        );
+      }
+
       return FutureBuilder<String>(
         future: _resolveProfileImageUrl(userId),
         builder: (context, snapshot) {
@@ -1092,7 +1101,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       height: size,
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFFFF7B5F), AppColors.primary],
+          colors: [Color(0xFF2F6BFF), Color(0xFF1E4FD6)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
