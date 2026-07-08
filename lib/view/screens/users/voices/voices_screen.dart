@@ -189,6 +189,7 @@ class _VoicesScreenState extends State<VoicesScreen> {
   Set<String> _existingUserIds = {};
   final Map<String, String> _profileImageCache = {};
   final Map<String, XFile> _shareImageCache = {};
+  List<VoicePost> _lastVisiblePosts = const [];
   bool _hasLoadedUsers = false;
   StreamSubscription<DatabaseEvent>? _usersSubscription;
   bool _isSharing = false;
@@ -701,6 +702,21 @@ Support this voice on CityVoice app.
 
   // ── Build ───────────────────────────────────────────────────────────────────
 
+  Widget _buildPostsList(BuildContext context, List<VoicePost> posts) {
+    return ListView.builder(
+      key: const PageStorageKey<String>('voices-feed-list'),
+      controller: _feedScrollController,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        MediaQuery.of(context).orientation == Orientation.landscape ? 76 : 100,
+      ),
+      itemCount: posts.length,
+      itemBuilder: (_, i) => _buildPostCard(posts[i]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -717,6 +733,10 @@ Support this voice on CityVoice app.
                 builder: (context, snapshot) {
                   // ── Loading ──────────────────────────────────────────────
                   if (snapshot.connectionState == ConnectionState.waiting) {
+                    if (_lastVisiblePosts.isNotEmpty) {
+                      return _buildPostsList(context, _lastVisiblePosts);
+                    }
+
                     return const Center(
                       child: CircularProgressIndicator(
                         color: AppColors.primary,
@@ -726,6 +746,10 @@ Support this voice on CityVoice app.
 
                   // ── Error ────────────────────────────────────────────────
                   if (snapshot.hasError) {
+                    if (_lastVisiblePosts.isNotEmpty) {
+                      return _buildPostsList(context, _lastVisiblePosts);
+                    }
+
                     return _buildEmptyState(
                       icon: Icons.wifi_off_rounded,
                       title: 'Connection error',
@@ -736,6 +760,10 @@ Support this voice on CityVoice app.
                   // ── No data ──────────────────────────────────────────────
                   final event = snapshot.data;
                   if (event == null || event.snapshot.value == null) {
+                    if (_lastVisiblePosts.isNotEmpty) {
+                      return _buildPostsList(context, _lastVisiblePosts);
+                    }
+
                     return _buildEmptyState(
                       icon: Icons.campaign_outlined,
                       title: 'No voices yet',
@@ -803,6 +831,7 @@ Support this voice on CityVoice app.
                           })
                           .toList()
                         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+                  _lastVisiblePosts = posts;
 
                   if (posts.isEmpty) {
                     return _buildEmptyState(
@@ -812,21 +841,7 @@ Support this voice on CityVoice app.
                     );
                   }
 
-                  return ListView.builder(
-                    key: const PageStorageKey<String>('voices-feed-list'),
-                    controller: _feedScrollController,
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      8,
-                      16,
-                      MediaQuery.of(context).orientation ==
-                              Orientation.landscape
-                          ? 76
-                          : 100,
-                    ),
-                    itemCount: posts.length,
-                    itemBuilder: (_, i) => _buildPostCard(posts[i]),
-                  );
+                  return _buildPostsList(context, posts);
                 },
               ),
             ),
